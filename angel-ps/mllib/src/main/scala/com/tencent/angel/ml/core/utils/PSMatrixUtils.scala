@@ -214,9 +214,8 @@ object PSMatrixUtils {
           vectors.zipWithIndex.foreach { case (vec, row) =>
             val valArr = vec.asInstanceOf[IntFloatVector].getStorage.getValues
             if (data == null) {
-              data = Array[Float](valArr.length * vectors.length)
+              data = new Array[Float](valArr.length * vectors.length)
             }
-
             Array.copy(valArr, 0, data, row * valArr.length, valArr.length)
           }
 

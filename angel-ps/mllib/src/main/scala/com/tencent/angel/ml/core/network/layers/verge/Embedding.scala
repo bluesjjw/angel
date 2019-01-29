@@ -70,7 +70,8 @@ class Embedding(name: String, outputDim: Int, val numFactors: Int, override val 
     val start = System.currentTimeMillis()
     status match {
       case STATUS.Forward =>
-        backward = gatherGrad()
+        //backward = gatherGrad()
+        backward.iadd(gatherGrad())
         status = STATUS.Backward
       case _ =>
         throw new AngelException("Status Error, Should call forward before when calling backward!")

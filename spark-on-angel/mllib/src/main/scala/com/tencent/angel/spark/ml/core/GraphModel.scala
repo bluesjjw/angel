@@ -68,7 +68,19 @@ class GraphModel extends Serializable {
     println(s"graph=\n$graph")
   }
 
-  def forward(epoch:Int, data: Array[LabeledData]): Matrix = {
+  def feedData(data: Array[LabeledData]): Unit = {
+    graph.feedData(data)
+  }
+
+  def pullParams(epoch: Int): Unit = {
+    graph.pullParams(epoch)
+  }
+
+  def predict(): Matrix = {
+    graph.predict()
+  }
+
+  def forward(epoch: Int, data: Array[LabeledData]): Matrix = {
     graph.feedData(data)
     graph.pullParams(epoch)
     graph.predict()
@@ -84,6 +96,13 @@ class GraphModel extends Serializable {
 
   def backward(): Unit = {
     graph.calBackward()
+  }
+
+  def localUpdate(): Unit = {
+    graph.localUpdate()
+  }
+
+  def pushGradient(): Unit = {
     graph.pushGradient()
   }
 

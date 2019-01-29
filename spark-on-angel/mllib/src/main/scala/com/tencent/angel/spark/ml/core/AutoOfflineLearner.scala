@@ -100,6 +100,8 @@ class AutoOfflineLearner(tuneIter: Int = 20, minimize: Boolean = true) {
     val train = splits(0)
     val validate = splits(1)
 
+    println(s"numTrain[${train.count}], numValid[${validate.count}]")
+
     data.cache()
     train.cache()
     validate.cache()
@@ -115,35 +117,64 @@ class AutoOfflineLearner(tuneIter: Int = 20, minimize: Boolean = true) {
 
     var numUpdate = 1
 
+    val bcNumSplits = data.sparkContext.broadcast(numSplits)
+    val bcBarrier = data.sparkContext.broadcast(2)
+
     var validateAuc = 0.0
     var validatePrecision = 0.0
 
+    val t1 = System.nanoTime
+
+    var totalBatch = 0
     for (epoch <- 0 until numEpoch) {
       val batchIterator = OfflineLearner.buildManifoldIterator(manifold, numSplits)
-      while (batchIterator.hasNext) {
-        val (sumLoss, batchSize) = batchIterator.next().mapPartitions { case iter =>
+      var innerBatch = 0
+      while (innerBatch < numSplits) {
+        // on executor
+        val (sumLoss, batchSize) = manifold.mapPartitions { iter =>
           PSContext.instance()
-          val batch = iter.next()
-          model.forward(epoch, batch)
-          val loss = model.getLoss()
-          model.backward()
-          Iterator.single((loss, batch.length))
+          val indices = Random.shuffle(List.range(0, bcNumSplits.value)).take(bcBarrier.value)
+          var counter = 0
+          var retBatchSize: Int = Int.MaxValue
+          var retLoss: Double = 0
+          iter.zipWithIndex.foreach { case (batch, idx) =>
+            if (indices.contains(idx)) {
+              model.feedData(batch)
+              if (counter == 0)
+                model.pullParams(epoch)
+              model.predict()
+              val loss = model.getLoss()
+
+              model.backward()
+
+              retBatchSize = retBatchSize min batch.length
+              retLoss += loss
+            }
+          }
+          model.pushGradient()
+          //Thread.sleep(100)
+          Iterator.single((retLoss, retBatchSize))
         }.reduce((f1, f2) => (f1._1 + f2._1, f1._2 + f2._2))
 
+        innerBatch += bcBarrier.value
+        totalBatch += bcBarrier.value
+        numUpdate += bcBarrier.value
+
         val (lr, boundary) = model.update(numUpdate, batchSize)
-        val loss = sumLoss / model.graph.taskNum
-        println(s"epoch=[$epoch] lr[$lr] batchSize[$batchSize] trainLoss=$loss")
+        val loss = sumLoss / model.graph.taskNum / bcBarrier.value
+        println(f"epoch=[$epoch] batch[$totalBatch] lr[$lr%.3f] batchSize[$batchSize] trainLoss=$loss")
         if (boundary) {
+          println(s"calculate metrics")
           var validateMetricLog = ""
           if (validationRatio > 0.0) {
-            val metric = evaluate(validate, model)
-            validateAuc = metric._1
-            validatePrecision = metric._2
+            val metrics = evaluate(validate, model)
+            validateAuc = metrics._1
+            validatePrecision = metrics._2
             validateMetricLog = s"validateAuc=$validateAuc validatePrecision=$validatePrecision"
           }
-          println(s"batch[$numUpdate] $validateMetricLog")
+          val timeCost = (System.nanoTime - t1) / 1e9d
+          println(f"time[$timeCost%.2f s] batch[$numUpdate] $validateMetricLog")
         }
-        numUpdate += 1
       }
     }
     (validateAuc, validatePrecision)
@@ -249,7 +280,7 @@ object AutoOfflineLearner {
       val samples = Random.shuffle(iterator).toArray
       val sizes = Array.tabulate(numSplit)(_ => samples.length / numSplit)
       val left = samples.length % numSplit
-      for (i <- 0 until left) sizes(i) += 1
+      //for (i <- 0 until left) sizes(i) += 1
 
       var idx = 0
       val manifold = new Array[Array[T]](numSplit)
@@ -294,7 +325,6 @@ object AutoOfflineLearner {
         batch
       }
     }
-
   }
 }
 

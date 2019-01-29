@@ -145,6 +145,12 @@ class AngelGraph(val placeHolder: PlaceHolder, val conf: SharedConf) extends Ser
     timeStats.pullParamsTime += (System.currentTimeMillis() - start)
   }
 
+  def localUpdate(): Unit = {
+    val start = System.currentTimeMillis()
+    trainableLayer.foreach(layer => layer.pushGradient())
+    timeStats.pushParamsTime += (System.currentTimeMillis() - start)
+  }
+
   def pushGradient(): Unit = {
     val start = System.currentTimeMillis()
     trainableLayer.foreach(layer => layer.pushGradient())

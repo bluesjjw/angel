@@ -19,12 +19,13 @@
 package com.tencent.angel.ml.core.graphsubmit
 
 import com.tencent.angel.client.AngelClient
-import com.tencent.angel.ml.core.conf.SharedConf
+import com.tencent.angel.ml.core.conf.{MLConf, SharedConf}
 import com.tencent.angel.ml.core.network.layers.verge.{Embedding, SimpleInputLayer}
 import com.tencent.angel.ml.feature.LabeledData
 import com.tencent.angel.ml.math2.matrix.{BlasDoubleMatrix, BlasFloatMatrix}
 import com.tencent.angel.ml.model.MLModel
 import com.tencent.angel.ml.core.network.layers.{AngelGraph, PlaceHolder}
+import com.tencent.angel.ml.core.optimizer.decayer.StandardDecay
 import com.tencent.angel.ml.core.optimizer.loss._
 import com.tencent.angel.ml.core.utils.paramsutils.JsonUtils
 import com.tencent.angel.ml.math2.utils.VectorUtils
@@ -33,6 +34,8 @@ import com.tencent.angel.worker.storage.{DataBlock, MemoryDataBlock}
 import com.tencent.angel.worker.task.TaskContext
 import org.apache.hadoop.conf.Configuration
 import org.json4s.JValue
+
+import scala.collection.mutable
 
 
 class GraphModel(conf: Configuration, _ctx: TaskContext = null)
@@ -50,6 +53,11 @@ class GraphModel(conf: Configuration, _ctx: TaskContext = null)
       JsonUtils.init()
     }
     jsonAst = sharedConf.getJson
+  }
+
+  def resetParam(paramMap: mutable.Map[String, Double]): this.type = {
+    graph.resetParam(paramMap)
+    this
   }
 
   def lossFunc: LossFunc = {

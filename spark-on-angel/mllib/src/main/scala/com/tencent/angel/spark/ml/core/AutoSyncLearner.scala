@@ -1,37 +1,31 @@
-/*
- * Tencent is pleased to support the open source community by making Angel available.
- *
- * Copyright (C) 2017-2018 THL A29 Limited, a Tencent company. All rights reserved.
- *
- * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in 
- * compliance with the License. You may obtain a copy of the License at
- *
- * https://opensource.org/licenses/Apache-2.0
- *
- * Unless required by applicable law or agreed to in writing, software distributed under the License
- * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
- * or implied. See the License for the specific language governing permissions and limitations under
- * the License.
- *
- */
-
-
 package com.tencent.angel.spark.ml.core
 
 import com.tencent.angel.ml.core.conf.{MLConf, SharedConf}
-import com.tencent.angel.ml.core.optimizer.loss.{L2Loss, LogLoss}
+import com.tencent.angel.ml.core.network.layers.{AngelGraph, PlaceHolder, STATUS}
+import com.tencent.angel.ml.core.optimizer.decayer.{StandardDecay, StepSizeScheduler}
+import com.tencent.angel.ml.core.optimizer.loss.{L2Loss, LogLoss, LossFunc}
+import com.tencent.angel.ml.core.utils.paramsutils.JsonUtils
 import com.tencent.angel.ml.feature.LabeledData
-import com.tencent.angel.ml.math2.matrix.{BlasDoubleMatrix, BlasFloatMatrix}
-import com.tencent.angel.spark.context.PSContext
+import com.tencent.angel.ml.math2.matrix.{BlasDoubleMatrix, BlasFloatMatrix, Matrix}
+import com.tencent.angel.model.{ModelLoadContext, ModelSaveContext}
+import com.tencent.angel.spark.automl.tuner.config.Configuration
+import com.tencent.angel.spark.automl.tuner.parameter.ParamSpace
+import com.tencent.angel.spark.automl.tuner.solver.Solver
+import com.tencent.angel.spark.automl.utils.AutoMLException
+import com.tencent.angel.spark.context.{AngelPSContext, PSContext}
 import com.tencent.angel.spark.ml.core.metric.{AUC, Precision}
 import com.tencent.angel.spark.ml.util.{DataLoader, SparkUtils}
 import org.apache.spark.SparkContext
+import org.apache.spark.ml.linalg.Vector
 import org.apache.spark.rdd.RDD
+import org.json4s.JsonAST.JValue
 
+import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 import scala.util.Random
 
-class OfflineLearner {
+class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = true) {
 
   // Shared configuration with Angel-PS
   val conf = SharedConf.get()
@@ -43,6 +37,42 @@ class OfflineLearner {
 
   println(s"fraction=$fraction validateRatio=$validationRatio numEpoch=$numEpoch")
 
+  val solver: Solver = Solver(minimize)
+
+  // param name -> param type (continuous or discrete), value type (int, double,...)
+  val paramType: mutable.Map[String, (String, String)] = new mutable.HashMap[String, (String, String)]()
+
+  def addParam(param: ParamSpace[AnyVal]): this.type = {
+    solver.addParam(param)
+    this
+  }
+
+  def addParam(pType: String, vType: String, name: String, config: String): this.type = {
+    paramType += name -> (pType.toLowerCase, vType.toLowerCase)
+    solver.addParam(pType, vType, name, config)
+    this
+  }
+
+  def setParam(name: String, vType: String, value: Double): Unit = {
+    println(s"set param[$name] type[$vType] value[$value]")
+    vType match {
+      case "int" => conf.setInt(name, value.toInt)
+      case "long" => conf.setLong(name, value.toLong)
+      case "float" => conf.setFloat(name, value.toFloat)
+      case "double" => conf.setDouble(name, value)
+      case _ => throw new AutoMLException(s"unsupported value type $vType")
+    }
+  }
+
+  def resetParam(paramMap: mutable.Map[String, Double]): this.type = {
+    paramMap.foreach(println)
+    numEpoch = paramMap.getOrElse(MLConf.ML_EPOCH_NUM, numEpoch.toDouble).toInt
+    fraction = paramMap.getOrElse(MLConf.ML_BATCH_SAMPLE_RATIO, fraction)
+    validationRatio = paramMap.getOrElse(MLConf.ML_VALIDATE_RATIO, validationRatio)
+    println(s"fraction=$fraction validateRatio=$validationRatio numEpoch=$numEpoch")
+    this
+  }
+
   def evaluate(data: RDD[LabeledData], model: GraphModel): (Double, Double) = {
     val scores = data.mapPartitions { case iter =>
       val output = model.forward(1, iter.toArray)
@@ -51,7 +81,7 @@ class OfflineLearner {
     (new AUC().cal(scores), new Precision().cal(scores))
   }
 
-  def train(data: RDD[LabeledData], model: GraphModel): Unit = {
+  def train(data: RDD[LabeledData], model: GraphModel): (Double, Double) = {
     // split data into train and validate
     val ratios = Array(1 - validationRatio, validationRatio)
     val splits = data.randomSplit(ratios)
@@ -72,16 +102,24 @@ class OfflineLearner {
     val manifold = OfflineLearner.buildManifold(train, numSplits)
 
     train.unpersist()
-    
+
     var numUpdate = 1
 
     val bcNumSplits = data.sparkContext.broadcast(numSplits)
-    val bcBarrier = data.sparkContext.broadcast(2)
+    var barrier = 1
+
+    val isAIMD = false
+
+    var validateAuc: ArrayBuffer[Double] = new ArrayBuffer[Double]
+    var validatePrecision: ArrayBuffer[Double] = new ArrayBuffer[Double]
+    validateAuc += 0.1
+    validatePrecision += 0.1
 
     val t1 = System.nanoTime
 
     var totalBatch = 0
     for (epoch <- 0 until numEpoch) {
+      val bcBarrier = data.sparkContext.broadcast(barrier)
       val batchIterator = OfflineLearner.buildManifoldIterator(manifold, numSplits)
       var innerBatch = 0
       while (innerBatch < numSplits) {
@@ -107,7 +145,7 @@ class OfflineLearner {
             }
           }
           model.pushGradient()
-          //Thread.sleep(100)
+          Thread.sleep(10)
           Iterator.single((retLoss, retBatchSize))
         }.reduce((f1, f2) => (f1._1 + f2._1, f1._2 + f2._2))
 
@@ -116,20 +154,30 @@ class OfflineLearner {
         numUpdate += bcBarrier.value
 
         val (lr, boundary) = model.update(numUpdate, batchSize)
+
         val loss = sumLoss / model.graph.taskNum / bcBarrier.value
-        println(f"epoch=[$epoch] batch[$totalBatch] lr[$lr%.3f] batchSize[$batchSize] trainLoss=$loss")
-        if (boundary) {
-          println(s"calculate metrics")
+        //println(f"epoch=[$epoch] batch[$totalBatch] lr[$lr%.3f] batchSize[$batchSize] trainLoss=$loss")
+        if (true) {
+          //println(s"calculate metrics")
           var validateMetricLog = ""
           if (validationRatio > 0.0) {
-            val (validateAuc, validatePrecision) = evaluate(validate, model)
-            validateMetricLog = s"validateAuc=$validateAuc validatePrecision=$validatePrecision"
+            val metrics = evaluate(validate, model)
+            if (isAIMD) {
+              if (metrics._1 > validateAuc.last)
+                barrier += 1
+              else if (barrier > 1)
+                barrier /= 2
+            }
+            validateAuc += metrics._1
+            validatePrecision += metrics._2
+            validateMetricLog = f"validateAuc=${validateAuc.last}%.5f validatePrecision=${validatePrecision.last}%.5f"
           }
           val timeCost = (System.nanoTime - t1) / 1e9d
-          println(f"time[$timeCost%.2f s] batch[$numUpdate] $validateMetricLog")
+          println(f"time[$timeCost%.2f s] barrier[$barrier] epoch[$epoch] batch[$numUpdate] batchsize[$batchSize] lr[$lr%.5f] $validateMetricLog")
         }
       }
     }
+    (validateAuc.max, validatePrecision.max)
   }
 
   /**
@@ -170,7 +218,6 @@ class OfflineLearner {
             dim: Int,
             model: GraphModel): Unit = {
     val conf = SparkContext.getOrCreate().getConf
-    println(s"spark cores: ${SparkUtils.getNumCores(conf)}")
     val data = SparkContext.getOrCreate().textFile(input)
       .repartition(SparkUtils.getNumCores(conf))
       .map(f => DataLoader.parseIntFloat(f, dim))
@@ -180,6 +227,7 @@ class OfflineLearner {
     if (modelInput.length > 0) model.load(modelInput)
     train(data, model)
     if (modelOutput.length > 0) model.save(modelOutput)
+
   }
 
   def predict(input: String,
@@ -200,7 +248,7 @@ class OfflineLearner {
 
 }
 
-object OfflineLearner {
+object AutoOfflineLearner {
 
   /**
     * Build manifold view for a RDD. A manifold RDD is to split a RDD to multiple RDD.
@@ -260,6 +308,6 @@ object OfflineLearner {
         batch
       }
     }
-
   }
 }
+

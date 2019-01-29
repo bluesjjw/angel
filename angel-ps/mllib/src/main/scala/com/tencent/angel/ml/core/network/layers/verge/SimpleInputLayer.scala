@@ -99,6 +99,34 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
   // ??
   @transient var bias: Vector = _ // dense
 
+  @transient var weightGradMat: Matrix = _
+
+  var weightGradVecs: Array[Vector] = new Array[Vector](outputDim)
+
+  var biasGradVec: Vector = _
+
+  override def pullParams(epoch: Int): Unit = {
+    // Note: weight is a row based matrix
+    (inputDataFormat, NetUtils.storageType(modelType)) match {
+      case ("dense", "dense" | "component_dense") => // dense data, dense model
+        // the shape of weight matrix is (inputDim, outputDim)
+        weight = PSMatrixUtils.getRowAsMatrix(epoch, weightId, 0, SharedConf.indexRange.toInt, outputDim)
+      case ("libsvm" | "dummy", "dense" | "component_dense") => // sparse data, dense model
+        val indices = graph.placeHolder.getIndices
+        // the shape of weight matrix is (outputDim, inputDim)
+        //weight = PSMatrixUtils.getMatrixWithIndex(1, weightId, 0, outputDim, indices)
+        weight = PSMatrixUtils.getMatrix(epoch, weightId, 0, outputDim)
+      case ("libsvm" | "dummy", "sparse" | "component_sparse") => // sparse data, sparse model
+        val indices = graph.placeHolder.getIndices
+        // the shape of weight matrix is (outputDim, inputDim)
+        // if epoch = 0, initAndGet(), else get()
+        weight = PSMatrixUtils.getMatrixWithIndex(epoch, weightId, 0, outputDim, indices)
+      case _ => // dense data, sparse model
+        throw new AngelException("Dense data, sparse model, pls. change model to dense")
+    }
+    bias = PSMatrixUtils.getRow(epoch, biasId, 0)
+  }
+
   override def calOutput(): Matrix = {
     val start = System.currentTimeMillis()
     status match {
@@ -137,79 +165,134 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
       case STATUS.Forward =>
         // println(s"the status in SparseInputLayer($name)-calBackward is ${status.toString}")
         val gradTemp = gatherGrad()
-        backward = transFunc.calGrad(output, gradTemp)
+        //backward = transFunc.calGrad(output, gradTemp)
+        if (backward == null) {
+          backward = transFunc.calGrad(output, gradTemp)
+        } else {
+          backward.iadd(transFunc.calGrad(output, gradTemp))
+        }
         status = STATUS.Backward
       case _ =>
     }
     val end = System.currentTimeMillis()
     // println(s"SparseInputLayer($name) calBackward Time=${end - start} ms")
 
+    localUpdate()
+
     backward
   }
 
-  override def pullParams(epoch: Int): Unit = {
-    // Note: weight is a row based matrix
-    (inputDataFormat, NetUtils.storageType(modelType)) match {
-      case ("dense", "dense" | "component_dense") => // dense data, dense model
-        // the shape of weight matrix is (inputDim, outputDim)
-        weight = PSMatrixUtils.getRowAsMatrix(epoch, weightId, 0, SharedConf.indexRange.toInt, outputDim)
-      case ("libsvm" | "dummy", "dense" | "component_dense") => // sparse data, dense model
-        val indices = graph.placeHolder.getIndices
-        // the shape of weight matrix is (outputDim, inputDim)
-        weight = PSMatrixUtils.getMatrixWithIndex(1, weightId, 0, outputDim, indices)
-      case ("libsvm" | "dummy", "sparse" | "component_sparse") => // sparse data, sparse model
-        val indices = graph.placeHolder.getIndices
-        // the shape of weight matrix is (outputDim, inputDim)
-        // if epoch = 0, initAndGet(), else get()
-        weight = PSMatrixUtils.getMatrixWithIndex(epoch, weightId, 0, outputDim, indices)
-      case _ => // dense data, sparse model
-        throw new AngelException("Dense data, sparse model, pls. change model to dense")
+  def localUpdate(): Unit = {
+    status match {
+      case STATUS.Backward =>
+        (inputDataFormat, NetUtils.storageType(modelType)) match {
+          case ("dense", "dense" | "component_dense") => // dense data, dense model
+            if (weightGradMat == null) {
+              weightGradMat = Ufuncs.dot(graph.placeHolder.getFeats, true, backward, false)
+              weight.iaxpy(Ufuncs.dot(graph.placeHolder.getFeats, true, backward, false),
+                -optimizer.lr)
+            }
+            else {
+              weightGradMat.iadd(Ufuncs.dot(graph.placeHolder.getFeats, true, backward, false))
+            }
+          case _ => // sparse data, dense or sparse model, note: dense data, sparse model is not allowed
+            (0 until outputDim).toArray.map { colId =>
+              val weightRowGrad = valueType match {
+                case "double" =>
+                  graph.placeHolder.getFeats.transDot(backward.asInstanceOf[BlasDoubleMatrix].getCol(colId))
+                case "float" =>
+                  graph.placeHolder.getFeats.transDot(backward.asInstanceOf[BlasFloatMatrix].getCol(colId))
+              }
+              if (weightGradVecs(colId) == null) {
+                weightGradVecs(colId) = weightRowGrad
+                //println(s"local update: ${weightGradVecs(colId)}")
+              } else {
+                weightGradVecs(colId).iadd(weightRowGrad)
+              }
+            }
+        }
+        if (biasGradVec == null) {
+          biasGradVec = backward.average(0).imul(-optimizer.lr / graph.taskNum)
+        } else {
+          biasGradVec.iadd(backward.average(0).imul(-optimizer.lr / graph.taskNum))
+        }
+      case _ =>
     }
-    bias = PSMatrixUtils.getRow(epoch, biasId, 0)
   }
 
   override def pushGradient(): Unit = {
-    val start = System.currentTimeMillis()
     val normal = 1.0 / OptUtils.getNormal(mode, graph)
 
     status match {
       case STATUS.Backward =>
         (inputDataFormat, NetUtils.storageType(modelType)) match {
           case ("dense", "dense" | "component_dense") => // dense data, dense model
-            val weightGrad: Matrix = Ufuncs.dot(graph.placeHolder.getFeats, true, backward, false)
-              .imul(normal)
-            PSMatrixUtils.incrementRowByMatrix(weightId, multiplier - 1, weightGrad)
+            weightGradMat.imul(normal)
+            PSMatrixUtils.incrementRowByMatrix(weightId, multiplier - 1, weightGradMat)
           case _ => // sparse data, dense or sparse model, note: dense data, sparse model is not allowed
-            val vectors = (0 until outputDim).toArray.map { colId =>
-              val weightRowGrad = valueType match {
-                case "double" =>
-                  graph.placeHolder.getFeats.transDot(backward.asInstanceOf[BlasDoubleMatrix].getCol(colId))
-                    .imul(normal)
-                case "float" =>
-                  graph.placeHolder.getFeats.transDot(backward.asInstanceOf[BlasFloatMatrix].getCol(colId))
-                    .imul(normal)
-              }
+            (0 until outputDim).toArray.map { colId =>
+              weightGradVecs(colId).imul(normal)
 
-              weightRowGrad.setMatrixId(weight.getMatrixId)
-              weightRowGrad.setRowId(outputDim * (multiplier - 1) + colId)
-              weightRowGrad.setClock(weight.getClock)
-
-              weightRowGrad
+              weightGradVecs(colId).setMatrixId(weight.getMatrixId)
+              weightGradVecs(colId).setRowId(outputDim * (multiplier - 1) + colId)
+              weightGradVecs(colId).setClock(weight.getClock)
             }
 
-            PSMatrixUtils.incrementRows(weightId, vectors.map(_.getRowId), vectors)
+            PSMatrixUtils.incrementRows(weightId, weightGradVecs.map(_.getRowId), weightGradVecs)
         }
 
-
-        PSMatrixUtils.incrementRow(biasId, 0, backward.average(0).imul(-optimizer.lr / graph.taskNum))
+        biasGradVec.imul(normal)
+        PSMatrixUtils.incrementRow(biasId, 0, biasGradVec)
 
         status = STATUS.Gradient
       case _ =>
     }
 
     val end = System.currentTimeMillis()
-    // println(s"pushGradient Time = ${end - start} ms")
   }
+
+//  override def pushGradient(): Unit = {
+//    val start = System.currentTimeMillis()
+//    val normal = 1.0 / OptUtils.getNormal(mode, graph)
+//
+//    status match {
+//      case STATUS.Backward =>
+//        (inputDataFormat, NetUtils.storageType(modelType)) match {
+//          case ("dense", "dense" | "component_dense") => // dense data, dense model
+//            val weightGrad: Matrix = Ufuncs.dot(graph.placeHolder.getFeats, true, backward, false)
+//              .imul(normal)
+//            PSMatrixUtils.incrementRowByMatrix(weightId, multiplier - 1, weightGrad)
+//          case _ => // sparse data, dense or sparse model, note: dense data, sparse model is not allowed
+//            val vectors = (0 until outputDim).toArray.map { colId =>
+//              val weightRowGrad = valueType match {
+//                case "double" =>
+//                  graph.placeHolder.getFeats.transDot(backward.asInstanceOf[BlasDoubleMatrix].getCol(colId))
+//                    .imul(normal)
+//                case "float" =>
+//                  graph.placeHolder.getFeats.transDot(backward.asInstanceOf[BlasFloatMatrix].getCol(colId))
+//                    .imul(normal)
+//              }
+//
+//              weightRowGrad.setMatrixId(weight.getMatrixId)
+//              weightRowGrad.setRowId(outputDim * (multiplier - 1) + colId)
+//              weightRowGrad.setClock(weight.getClock)
+//
+//              weightRowGrad
+//            }
+//
+//            PSMatrixUtils.incrementRows(weightId, vectors.map(_.getRowId), vectors)
+//        }
+//
+//
+//        PSMatrixUtils.incrementRow(biasId, 0, backward.average(0).imul(-optimizer.lr / graph.taskNum))
+//
+//        status = STATUS.Gradient
+//      case _ =>
+//    }
+//
+//    val end = System.currentTimeMillis()
+//    // println(s"pushGradient Time = ${end - start} ms")
+//  }
 
   override def update(epoch: Int, batchSize: Int): Future[VoidResult] = {
     val start = System.currentTimeMillis()
