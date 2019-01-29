@@ -18,12 +18,12 @@
 
 package com.tencent.angel.spark.automl.feature
 
-import org.apache.spark.ml.Transformer
+import org.apache.spark.ml.{PipelineStage, Transformer}
 import com.tencent.angel.spark.automl.feature.InToOutRelation.InToOutRelation
 
 abstract class TransformerWrapper {
 
-  val transformer: Transformer
+  val transformer: PipelineStage
   var parent: TransformerWrapper
 
   val relation: InToOutRelation
@@ -41,7 +41,7 @@ abstract class TransformerWrapper {
 
   private var ancestorCols: Array[String] = _
 
-  def getTransformer: Transformer = transformer
+  def getTransformer = transformer
 
   def setParent(parent: TransformerWrapper): Unit = this.parent = parent
 
@@ -56,7 +56,8 @@ abstract class TransformerWrapper {
   def setAncestorCols(cols: Array[String]): Unit = ancestorCols = cols
 
   def generateInputCols(): Unit = {
-    require(ancestorCols.contains(requiredInputCols), "Missing required input cols.")
+    //require(ancestorCols.contains(requiredInputCols), "Missing required input cols.")
+    require(requiredInputCols.forall(ancestorCols.contains), "Missing required input cols.")
     // if transformer has required input cols, feed required input cols
     // if transformer needs all input cols, feed all input cols
     // if transformer has no required input cols, feed the output cols of the parent transformer
