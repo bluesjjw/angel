@@ -15,13 +15,24 @@
  *
  */
 
+package com.tencent.angel.ml.core.optimizer.decayer
 
-package com.tencent.angel.ml.GBDT.algo.sketch;
+import com.tencent.angel.ml.core.conf.{MLConf, SharedConf}
 
-public class QuantileSketchException extends RuntimeException {
+class CorrectionDecay(eta: Double, alpha: Double, beta: Double) extends StepSizeScheduler {
 
-  public QuantileSketchException(String message) {
-    super(message);
+  var current: Int = 0
+  val interval: Int = SharedConf.get().getInt(MLConf.ML_OPT_DECAY_INTERVALS, 100)
+
+  override def next(): Double = {
+    val eta_time = eta / math.sqrt(1 + alpha * current) * (1 - beta) / (1 - math.pow(beta, current))
+    current += 1
+
+    eta_time
+  }
+
+  override def isIntervalBoundary: Boolean = {
+    current % interval == 0
   }
 
 }

@@ -1,3 +1,20 @@
+/*
+ * Tencent is pleased to support the open source community by making Angel available.
+ *
+ * Copyright (C) 2017-2018 THL A29 Limited, a Tencent company. All rights reserved.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except in
+ * compliance with the License. You may obtain a copy of the License at
+ *
+ * https://opensource.org/licenses/Apache-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software distributed under the License
+ * is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express
+ * or implied. See the License for the specific language governing permissions and limitations under
+ * the License.
+ *
+ */
+
 package com.tencent.angel.ml.math2.matrix.BlasMatrixTest
 
 import com.tencent.angel.ml.math2.MFactory
@@ -31,7 +48,7 @@ class BalsTest extends FunSuite {
   test("Double-NN") {
     val mat1 = MFactory.denseDoubleMatrix(3, 4, data1)
     val mat2 = MFactory.denseDoubleMatrix(4, 2, data2)
-    val res = Ufuncs.dot(mat1, false, mat2, false).asInstanceOf[BlasDoubleMatrix]
+    val res = Ufuncs.dot(mat1, false, mat2, false, true).asInstanceOf[BlasDoubleMatrix]
 
     (0 until 3).foreach { rId =>
       (0 until 2).foreach { cId =>
@@ -50,7 +67,7 @@ class BalsTest extends FunSuite {
   test("Double-NT") {
     val mat1 = MFactory.denseDoubleMatrix(3, 4, data1)
     val mat2 = MFactory.denseDoubleMatrix(2, 4, data2)
-    val res = Ufuncs.dot(mat1, false, mat2, true).asInstanceOf[BlasDoubleMatrix]
+    val res = Ufuncs.dot(mat1, false, mat2, true, true).asInstanceOf[BlasDoubleMatrix]
 
 
     (0 until 3).foreach { rId =>
@@ -69,7 +86,7 @@ class BalsTest extends FunSuite {
   test("Double-TN") {
     val mat1 = MFactory.denseDoubleMatrix(4, 3, data1)
     val mat2 = MFactory.denseDoubleMatrix(4, 2, data2)
-    val res = Ufuncs.dot(mat1, true, mat2, false).asInstanceOf[BlasDoubleMatrix]
+    val res = Ufuncs.dot(mat1, true, mat2, false, true).asInstanceOf[BlasDoubleMatrix]
 
     (0 until 3).foreach { rId =>
       (0 until 2).foreach { cId =>
@@ -87,7 +104,7 @@ class BalsTest extends FunSuite {
   test("Double-TT") {
     val mat1 = MFactory.denseDoubleMatrix(4, 3, data1)
     val mat2 = MFactory.denseDoubleMatrix(2, 4, data2)
-    val res = Ufuncs.dot(mat1, true, mat2, true).asInstanceOf[BlasDoubleMatrix]
+    val res = Ufuncs.dot(mat1, true, mat2, true, true).asInstanceOf[BlasDoubleMatrix]
 
     (0 until 3).foreach { rId =>
       (0 until 2).foreach { cId =>
@@ -105,7 +122,7 @@ class BalsTest extends FunSuite {
   test("Float-NN") {
     val mat1 = MFactory.denseFloatMatrix(3, 4, data1f)
     val mat2 = MFactory.denseFloatMatrix(4, 2, data2f)
-    val res = Ufuncs.dot(mat1, false, mat2, false).asInstanceOf[BlasFloatMatrix]
+    val res = Ufuncs.dot(mat1, false, mat2, false, true).asInstanceOf[BlasFloatMatrix]
 
     (0 until 3).foreach { rId =>
       (0 until 2).foreach { cId =>
@@ -124,7 +141,7 @@ class BalsTest extends FunSuite {
   test("Float-NT") {
     val mat1 = MFactory.denseFloatMatrix(3, 4, data1f)
     val mat2 = MFactory.denseFloatMatrix(2, 4, data2f)
-    val res = Ufuncs.dot(mat1, false, mat2, true).asInstanceOf[BlasFloatMatrix]
+    val res = Ufuncs.dot(mat1, false, mat2, true, true).asInstanceOf[BlasFloatMatrix]
 
 
     (0 until 3).foreach { rId =>
@@ -143,7 +160,7 @@ class BalsTest extends FunSuite {
   test("Float-TN") {
     val mat1 = MFactory.denseFloatMatrix(4, 3, data1f)
     val mat2 = MFactory.denseFloatMatrix(4, 2, data2f)
-    val res = Ufuncs.dot(mat1, true, mat2, false).asInstanceOf[BlasFloatMatrix]
+    val res = Ufuncs.dot(mat1, true, mat2, false, true).asInstanceOf[BlasFloatMatrix]
 
     (0 until 3).foreach { rId =>
       (0 until 2).foreach { cId =>
@@ -161,7 +178,7 @@ class BalsTest extends FunSuite {
   test("Float-TT") {
     val mat1 = MFactory.denseFloatMatrix(4, 3, data1f)
     val mat2 = MFactory.denseFloatMatrix(2, 4, data2f)
-    val res = Ufuncs.dot(mat1, true, mat2, true).asInstanceOf[BlasFloatMatrix]
+    val res = Ufuncs.dot(mat1, true, mat2, true, true).asInstanceOf[BlasFloatMatrix]
 
     (0 until 3).foreach { rId =>
       (0 until 2).foreach { cId =>

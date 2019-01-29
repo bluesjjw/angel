@@ -34,8 +34,6 @@ object MLConf {
   val DEFAULT_ML_DATA_INPUT_FORMAT = "libsvm"
   val ML_DATA_SPLITOR = "ml.data.splitor"
   val DEFAULT_ML_DATA_SPLITOR = "\\s+"
-  val ML_DATA_IS_NEGY = "ml.data.is.negy"
-  val DEFAULT_ML_DATA_IS_NEGY = true
   val ML_DATA_HAS_LABEL = "ml.data.has.label"
   val DEFAULT_ML_DATA_HAS_LABEL = true
   val ML_DATA_LABEL_TRANS = "ml.data.label.trans.class"
@@ -77,7 +75,8 @@ object MLConf {
   val ML_BATCH_SAMPLE_RATIO = "ml.batch.sample.ratio"
   val DEFAULT_ML_BATCH_SAMPLE_RATIO = 1.0
   val ML_LEARN_RATE = "ml.learn.rate"
-  val DEFAULT_ML_LEARN_RATE = 0.1
+  val DEFAULT_ML_LEARN_RATE = 0.5
+
   val ML_NUM_UPDATE_PER_EPOCH = "ml.num.update.per.epoch"
   val DEFAULT_ML_NUM_UPDATE_PER_EPOCH = 10
 
@@ -104,6 +103,14 @@ object MLConf {
   // Momentum
   val ML_OPT_MOMENTUM_MOMENTUM = "ml.opt.momentum.momentum"
   val DEFAULT_ML_OPT_MOMENTUM_MOMENTUM = 0.9
+  // AdaDelta
+  val ML_OPT_ADADELTA_ALPHA = "ml.opt.adadelta.alpha"
+  val DEFAULT_ML_OPT_ADADELTA_ALPHA = 0.9
+  val ML_OPT_ADADELTA_BETA = "ml.opt.adadelta.beta"
+  val DEFAULT_ML_OPT_ADADELTA_BETA = 0.9
+  // AdaGrad
+  val ML_OPT_ADAGRAD_BETA = "ml.opt.adagrad.beta"
+  val DEFAULT_ML_OPT_ADADGRAD_BETA = 0.9
   // Adam
   val ML_OPT_ADAM_GAMMA = "ml.opt.adam.gamma"
   val DEFAULT_ML_OPT_ADAM_GAMMA = 0.99
@@ -114,36 +121,22 @@ object MLConf {
   val DEFAULT_ML_OPT_FTRL_ALPHA = 0.1
   val ML_OPT_FTRL_BETA = "ml.opt.ftrl.beta"
   val DEFAULT_ML_OPT_FTRL_BETA = 1.0
-  // AdaDelta
-  val ML_OPT_ADADELTA_BETA = "ml.opt.adadelta.beta"
-  val DEFAULT_ML_OPT_ADADELTA_BETA = 0.9
-  // AdaGrad
-  val ML_OPT_ADAGRAD_BETA = "ml.opt.adadelta.beta"
-  val DEFAULT_ML_OPT_ADADGRAD_BETA = 0.9
 
   // Decays
   val ML_OPT_DECAY_CLASS_NAME = "ml.opt.decay.class.name"
   val DEFAULT_ML_OPT_DECAY_CLASS_NAME = "StandardDecay"
+  val ML_OPT_DECAY_ON_BATCH = "ml.opt.decay.on.batch"
+  val DEFAULT_ML_OPT_DECAY_ON_BATCH = false
   val ML_OPT_DECAY_INTERVALS = "ml.opt.decay.intervals"
   val DEFAULT_ML_OPT_DECAY_INTERVALS = 100
   val ML_OPT_DECAY_ALPHA = "ml.opt.decay.alpha"
   val DEFAULT_ML_OPT_DECAY_ALPHA = 0.001
   val ML_OPT_DECAY_BETA = "ml.opt.decay.beta"
   val DEFAULT_ML_OPT_DECAY_BETA = 0.001
-  val ML_OPT_DECAY_POWER = "ml.opt.decay.power"
-  val DEFAULT_ML_OPT_DECAY_POWER = 0.001
-  val ML_OPT_DECAY_STAIRCASE = "ml.opt.decay.staircase"
-  val DEFAULT_ML_OPT_DECAY_STAIRCASE = false
-  val ML_OPT_DECAY_USENATURAL = "ml.opt.decay.usenatural"
-  val DEFAULT_ML_OPT_DECAY_USENATURAL = false
-  val ML_OPT_DECAY_USENOISY = "ml.opt.decay.usenoisy"
-  val DEFAULT_ML_OPT_DECAY_USENOISY = false
-  val ML_OPT_DECAY_CYCLE = "ml.opt.decay.cycle"
-  val DEFAULT_ML_OPT_DECAY_CYCLE = false
 
   // Reg param
   val ML_REG_L2 = "ml.reg.l2"
-  val DEFAULT_ML_REG_L2 = 0.005
+  val DEFAULT_ML_REG_L2 = 0.0
   val ML_REG_L1 = "ml.reg.l1"
   val DEFAULT_ML_REG_L1 = 0.0
 
@@ -154,12 +147,6 @@ object MLConf {
   val DEFAULT_ML_RANK_NUM = 8
 
   // (MLP) Layer params
-  val ML_MLP_INPUT_LAYER_PARAMS = "ml.mlp.input.layer.params"
-  val DEFAULT_ML_MLP_INPUT_LAYER_PARAMS = "100,identity"
-  val ML_MLP_HIDEN_LAYER_PARAMS = "ml.mlp.hidden.layer.params"
-  val DEFAULT_ML_MLP_HIDEN_LAYER_PARAMS = "100,relu|100,relu|1,identity"
-  val ML_MLP_LOSS_LAYER_PARAMS = "ml.mlp.loss.layer.params"
-  val DEFAULT_ML_MLP_LOSS_LAYER_PARAMS = "logloss"
   val ML_NUM_CLASS = "ml.num.class"
   val DEFAULT_ML_NUM_CLASS = 2
 
@@ -174,8 +161,6 @@ object MLConf {
   // Kmeans params
   val KMEANS_CENTER_NUM = "ml.kmeans.center.num"
   val DEFAULT_KMEANS_CENTER_NUM = 5
-  val KMEANS_SAMPLE_RATIO_PERBATCH = "ml.kmeans.sample.ratio.perbath"
-  val DEFAULT_KMEANS_SAMPLE_RATIO_PERBATCH = 0.5
   val KMEANS_C = "ml.kmeans.c"
   val DEFAULT_KMEANS_C = 0.1
 
@@ -220,6 +205,11 @@ object MLConf {
   /** The predict error of all samples */
   val TRAIN_ERROR = "train.error"
   val VALID_ERROR = "validate.error"
+
+  /** The predict error of all samples */
+  val ML_MATRIX_DOT_USE_PARALLEL_EXECUTOR = "ml.matrix.dot.use.parallel.executor"
+  val DEFAULT_ML_MATRIX_DOT_USE_PARALLEL_EXECUTOR = false
+
 }
 
 class MLConf {}
