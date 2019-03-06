@@ -106,7 +106,7 @@ class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = true) {
     var numUpdate = 1
 
     val bcNumSplits = data.sparkContext.broadcast(numSplits)
-    var barrier = 1
+    var barrier = conf.getInt(MLConf.SYNC_BATCH, MLConf.DEFAULT_SYNC_BATCH)
 
     val isAIMD = false
 
@@ -120,18 +120,21 @@ class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = true) {
     var totalBatch = 0
     for (epoch <- 0 until numEpoch) {
       val bcBarrier = data.sparkContext.broadcast(barrier)
-      val batchIterator = OfflineLearner.buildManifoldIterator(manifold, numSplits)
+      //val batchIterator = OfflineLearner.buildManifoldIterator(manifold, numSplits)
       var innerBatch = 0
       while (innerBatch < numSplits) {
         // on executor
-        val (sumLoss, batchSize) = manifold.mapPartitions { iter =>
+        val (sumLoss, batchSize) = manifold.mapPartitionsWithIndex { (partId, iter) =>
+          println(s"partition $partId")
           PSContext.instance()
           val indices = Random.shuffle(List.range(0, bcNumSplits.value)).take(bcBarrier.value)
+          println(s"batch indices: ${indices.mkString(",")}")
           var counter = 0
           var retBatchSize: Int = Int.MaxValue
           var retLoss: Double = 0
           iter.zipWithIndex.foreach { case (batch, idx) =>
             if (indices.contains(idx)) {
+              println(s"use batch $idx")
               model.feedData(batch)
               if (counter == 0)
                 model.pullParams(epoch)
@@ -142,8 +145,10 @@ class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = true) {
 
               retBatchSize = retBatchSize min batch.length
               retLoss += loss
+              counter += 1
             }
           }
+          println("------push gradient to ps------")
           model.pushGradient()
           Thread.sleep(10)
           Iterator.single((retLoss, retBatchSize))
@@ -156,7 +161,7 @@ class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = true) {
         val (lr, boundary) = model.update(numUpdate, batchSize)
 
         val loss = sumLoss / model.graph.taskNum / bcBarrier.value
-        //println(f"epoch=[$epoch] batch[$totalBatch] lr[$lr%.3f] batchSize[$batchSize] trainLoss=$loss")
+        println(f"epoch=[$epoch] batch[$totalBatch] lr[$lr%.3f] batchSize[$batchSize] trainLoss=$loss")
         if (true) {
           //println(s"calculate metrics")
           var validateMetricLog = ""
@@ -248,7 +253,7 @@ class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = true) {
 
 }
 
-object AutoOfflineLearner {
+object AutoSyncLearner {
 
   /**
     * Build manifold view for a RDD. A manifold RDD is to split a RDD to multiple RDD.

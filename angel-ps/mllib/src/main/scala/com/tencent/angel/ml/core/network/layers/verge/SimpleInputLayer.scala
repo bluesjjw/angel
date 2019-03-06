@@ -27,6 +27,7 @@ import com.tencent.angel.ml.core.network.transfunc.TransFunc
 import com.tencent.angel.ml.core.optimizer.{OptUtils, Optimizer}
 import com.tencent.angel.ml.core.utils.{NetUtils, PSMatrixUtils}
 import com.tencent.angel.ml.math2.matrix._
+import com.tencent.angel.ml.math2.storage.{IntDoubleDenseVectorStorage, IntFloatDenseVectorStorage, IntFloatSparseVectorStorage}
 import com.tencent.angel.ml.math2.ufuncs.Ufuncs
 import com.tencent.angel.ml.math2.utils.VectorUtils
 import com.tencent.angel.ml.math2.vector._
@@ -99,11 +100,9 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
   // ??
   @transient var bias: Vector = _ // dense
 
-  @transient var weightGradMat: Matrix = _
+  var weightUpdate: Array[Vector] = new Array[Vector](outputDim) // sparse
 
-  var weightGradVecs: Array[Vector] = new Array[Vector](outputDim)
-
-  var biasGradVec: Vector = _
+  var biasUpdate: Vector = _
 
   override def pullParams(epoch: Int): Unit = {
     // Note: weight is a row based matrix
@@ -115,7 +114,9 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
         val indices = graph.placeHolder.getIndices
         // the shape of weight matrix is (outputDim, inputDim)
         //weight = PSMatrixUtils.getMatrixWithIndex(1, weightId, 0, outputDim, indices)
+        println(s"worker ${}")
         weight = PSMatrixUtils.getMatrix(epoch, weightId, 0, outputDim)
+        printVec(weight.getRow(0), "original weight")
       case ("libsvm" | "dummy", "sparse" | "component_sparse") => // sparse data, sparse model
         val indices = graph.placeHolder.getIndices
         // the shape of weight matrix is (outputDim, inputDim)
@@ -187,14 +188,8 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
       case STATUS.Backward =>
         (inputDataFormat, NetUtils.storageType(modelType)) match {
           case ("dense", "dense" | "component_dense") => // dense data, dense model
-            if (weightGradMat == null) {
-              weightGradMat = Ufuncs.dot(graph.placeHolder.getFeats, true, backward, false)
-              weight.iaxpy(Ufuncs.dot(graph.placeHolder.getFeats, true, backward, false),
-                -optimizer.lr)
-            }
-            else {
-              weightGradMat.iadd(Ufuncs.dot(graph.placeHolder.getFeats, true, backward, false))
-            }
+            weight.iaxpy(Ufuncs.dot(graph.placeHolder.getFeats, true, backward, false),
+              -optimizer.lr)
           case _ => // sparse data, dense or sparse model, note: dense data, sparse model is not allowed
             (0 until outputDim).toArray.map { colId =>
               val weightRowGrad = valueType match {
@@ -203,19 +198,29 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
                 case "float" =>
                   graph.placeHolder.getFeats.transDot(backward.asInstanceOf[BlasFloatMatrix].getCol(colId))
               }
-              if (weightGradVecs(colId) == null) {
-                weightGradVecs(colId) = weightRowGrad
-                //println(s"local update: ${weightGradVecs(colId)}")
+
+              // update local weight
+              weight.iaxpy(weightRowGrad, -optimizer.lr)
+              // update local weight update
+              if (weightUpdate(0) == null) {
+                weightUpdate(0) = weightRowGrad.mul(-optimizer.lr)
               } else {
-                weightGradVecs(colId).iadd(weightRowGrad)
+                weightUpdate(0).iaxpy(weightRowGrad, -optimizer.lr)
               }
+              printVec(weightRowGrad, "weight grad")
+              printVec(weightUpdate(0), "weight update")
+              printVec(weight.getRow(0), "weight")
             }
         }
-        if (biasGradVec == null) {
-          biasGradVec = backward.average(0).imul(-optimizer.lr / graph.taskNum)
+        val biasTmp = backward.average(0).imul(-optimizer.lr / graph.taskNum)
+        bias.iadd(biasTmp)
+        if (biasUpdate == null) {
+          biasUpdate = biasTmp
         } else {
-          biasGradVec.iadd(backward.average(0).imul(-optimizer.lr / graph.taskNum))
+          biasUpdate.iadd(biasTmp)
         }
+        printVec(biasUpdate, s"bias update")
+        printVec(bias, s"bias")
       case _ =>
     }
   }
@@ -227,22 +232,30 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
       case STATUS.Backward =>
         (inputDataFormat, NetUtils.storageType(modelType)) match {
           case ("dense", "dense" | "component_dense") => // dense data, dense model
-            weightGradMat.imul(normal)
-            PSMatrixUtils.incrementRowByMatrix(weightId, multiplier - 1, weightGradMat)
+            //PSMatrixUtils.incrementRowByMatrix(weightId, multiplier - 1, weightUpdate)
           case _ => // sparse data, dense or sparse model, note: dense data, sparse model is not allowed
-            (0 until outputDim).toArray.map { colId =>
-              weightGradVecs(colId).imul(normal)
+//            (0 until outputDim).toArray.map { colId =>
+//              weightUpdate(colId).imul(normal)
+//
+//              weightUpdate(colId).setMatrixId(weight.getMatrixId)
+//              weightUpdate(colId).setRowId(outputDim * (multiplier - 1) + colId)
+//              weightUpdate(colId).setClock(weight.getClock)
+//            }
+//            PSMatrixUtils.incrementRows(weightId, weightUpdate.map(_.getRowId), weightUpdate)
 
-              weightGradVecs(colId).setMatrixId(weight.getMatrixId)
-              weightGradVecs(colId).setRowId(outputDim * (multiplier - 1) + colId)
-              weightGradVecs(colId).setClock(weight.getClock)
-            }
+            weightUpdate(0).imul(normal)
+            weightUpdate(0).setMatrixId(weight.getMatrixId)
+            weightUpdate(0).setRowId(0)
+            weightUpdate(0).setClock(weight.getClock)
 
-            PSMatrixUtils.incrementRows(weightId, weightGradVecs.map(_.getRowId), weightGradVecs)
+            PSMatrixUtils.incrementRow(weightId, weightUpdate(0).getRowId, weightUpdate(0))
         }
 
-        biasGradVec.imul(normal)
-        PSMatrixUtils.incrementRow(biasId, 0, biasGradVec)
+        biasUpdate.imul(normal)
+        PSMatrixUtils.incrementRow(biasId, 0, biasUpdate)
+
+        weightUpdate(0).imul(0)
+        biasUpdate.imul(0)
 
         status = STATUS.Gradient
       case _ =>
@@ -327,6 +340,26 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
       }
     }
   }
+
+  def printVec(vec: Vector, info: String): Unit = {
+    println(vec.getType.toString)
+    vec.getType match {
+      case RowType.T_DOUBLE_DENSE =>
+        val vecStr = vec.getStorage.asInstanceOf[IntDoubleDenseVectorStorage]
+          .getValues.take(10).mkString(",")
+        println(s"$info $vecStr")
+      case RowType.T_FLOAT_DENSE =>
+        val vecStr = vec.getStorage.asInstanceOf[IntFloatDenseVectorStorage]
+          .getValues.take(10).mkString(",")
+        println(s"$info $vecStr")
+      case RowType.T_FLOAT_SPARSE =>
+        val vecStr = vec.getStorage.asInstanceOf[IntFloatSparseVectorStorage]
+          .getValues.take(10).mkString(",")
+        println(s"$info $vecStr")
+    }
+
+  }
+
 
   override def toString: String = {
     s"SimpleInputLayer name=$name outputDim=$outputDim optimizer=$optimizer"

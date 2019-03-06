@@ -198,6 +198,10 @@ object MLConf {
   val ML_TREE_AGGRE_MAX_MEMORY_MB = "ml.tree.aggr.max.memory.mb"
   val DEFAULT_ML_TREE_AGGRE_MAX_MEMORY_MB = 256
 
+  /** AutoML **/
+  val SYNC_BATCH = "ml.sync.batch"
+  val DEFAULT_SYNC_BATCH = 1
+
   /** The loss sum of all samples */
   val TRAIN_LOSS = "train.loss"
   val VALID_LOSS = "validate.loss"
