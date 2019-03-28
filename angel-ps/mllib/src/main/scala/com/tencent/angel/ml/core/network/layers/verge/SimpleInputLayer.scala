@@ -38,6 +38,7 @@ import com.tencent.angel.ml.matrix.{MatrixContext, RowType}
 import com.tencent.angel.model.{MatrixLoadContext, MatrixSaveContext, ModelLoadContext, ModelSaveContext}
 import com.tencent.angel.psagent.PSAgentContext
 import org.apache.commons.logging.LogFactory
+import org.apache.spark.SparkEnv
 
 
 class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, override val optimizer: Optimizer)(implicit graph: AngelGraph)
@@ -114,7 +115,7 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
         val indices = graph.placeHolder.getIndices
         // the shape of weight matrix is (outputDim, inputDim)
         //weight = PSMatrixUtils.getMatrixWithIndex(1, weightId, 0, outputDim, indices)
-        println(s"worker ${}")
+        println(s"worker ${SparkEnv.get.executorId}")
         weight = PSMatrixUtils.getMatrix(epoch, weightId, 0, outputDim)
         printVec(weight.getRow(0), "original weight")
       case ("libsvm" | "dummy", "sparse" | "component_sparse") => // sparse data, sparse model
@@ -199,19 +200,28 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
                   graph.placeHolder.getFeats.transDot(backward.asInstanceOf[BlasFloatMatrix].getCol(colId))
               }
 
+              printVec(weightRowGrad, "weight grad")
+              val localWeightRowUpdate = weightRowGrad.mul(-optimizer.lr)
+              printVec(localWeightRowUpdate, "weight update of batch")
               // update local weight
-              weight.iaxpy(weightRowGrad, -optimizer.lr)
+              //weight.iaxpy(weightRowGrad, -optimizer.lr)
+              println(s"dim of weight(0): ${weight.getRow(0).dim()}, dim of local update: ${localWeightRowUpdate.dim()}")
+              weight.getRow(0).iadd(localWeightRowUpdate)
               // update local weight update
               if (weightUpdate(0) == null) {
-                weightUpdate(0) = weightRowGrad.mul(-optimizer.lr)
+                println(s"local weight update is null")
+                //weightUpdate(0) = weightRowGrad.mul(-optimizer.lr)
+                weightUpdate(0) = localWeightRowUpdate
               } else {
-                weightUpdate(0).iaxpy(weightRowGrad, -optimizer.lr)
+                println(s"local weight update is not null")
+                //weightUpdate(0).iaxpy(weightRowGrad, -optimizer.lr)
+                weightUpdate(0).iadd(localWeightRowUpdate)
               }
-              printVec(weightRowGrad, "weight grad")
               printVec(weightUpdate(0), "weight update")
               printVec(weight.getRow(0), "weight")
             }
         }
+        printVec(bias, s"original bias")
         val biasTmp = backward.average(0).imul(-optimizer.lr / graph.taskNum)
         bias.iadd(biasTmp)
         if (biasUpdate == null) {
@@ -342,7 +352,7 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
   }
 
   def printVec(vec: Vector, info: String): Unit = {
-    println(vec.getType.toString)
+    //println(vec.getType.toString)
     vec.getType match {
       case RowType.T_DOUBLE_DENSE =>
         val vecStr = vec.getStorage.asInstanceOf[IntDoubleDenseVectorStorage]

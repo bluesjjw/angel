@@ -136,6 +136,7 @@ class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = true) {
             if (indices.contains(idx)) {
               println(s"use batch $idx")
               model.feedData(batch)
+              println(s"counter $counter")
               if (counter == 0)
                 model.pullParams(epoch)
               model.predict()
