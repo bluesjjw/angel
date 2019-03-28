@@ -23,9 +23,10 @@ import java.util.concurrent.Future
 import com.tencent.angel.ml.matrix.psf.update.base.VoidResult
 import com.tencent.angel.ml.psf.optimizer.FTRLUpdateFunc
 import com.tencent.angel.psagent.PSAgentContext
+import scala.collection._
 
 
-class FTRL(stepSize: Double, val alpha: Double, val beta: Double) extends Optimizer(stepSize) {
+class FTRL(stepSize: Double, var alpha: Double, var beta: Double) extends Optimizer(stepSize) {
   override protected var numSlot: Int = 3
 
   override def resetParam(paramMap: mutable.Map[String, Double]): Unit = {

@@ -20,25 +20,15 @@ package com.tencent.angel.ml.core.network.layers.verge
 
 import java.util.concurrent.Future
 
-import com.tencent.angel.exception.AngelException
 import com.tencent.angel.ml.core.conf.{MLConf, SharedConf}
 import com.tencent.angel.ml.core.network.layers._
 import com.tencent.angel.ml.core.network.transfunc.TransFunc
 import com.tencent.angel.ml.core.optimizer.{OptUtils, Optimizer}
 import com.tencent.angel.ml.core.utils.{NetUtils, PSMatrixUtils}
-import com.tencent.angel.ml.math2.matrix._
-import com.tencent.angel.ml.math2.storage.{IntDoubleDenseVectorStorage, IntFloatDenseVectorStorage, IntFloatSparseVectorStorage}
-import com.tencent.angel.ml.math2.ufuncs.Ufuncs
-import com.tencent.angel.ml.math2.utils.VectorUtils
-import com.tencent.angel.ml.math2.vector._
-import com.tencent.angel.ml.math2.{MFactory, VFactory}
+
 import com.tencent.angel.ml.matrix.psf.update.RandomNormal
-import com.tencent.angel.ml.matrix.psf.update.base.VoidResult
-import com.tencent.angel.ml.matrix.{MatrixContext, RowType}
-import com.tencent.angel.model.{MatrixLoadContext, MatrixSaveContext, ModelLoadContext, ModelSaveContext}
-import com.tencent.angel.psagent.PSAgentContext
+
 import org.apache.commons.logging.LogFactory
-import org.apache.spark.SparkEnv
 
 
 class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, override val optimizer: Optimizer)(implicit graph: AngelGraph)
@@ -186,6 +176,8 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
   }
 
   def localUpdate(): Unit = {
+    val start = System.currentTimeMillis()
+    val normal = 1.0 / OptUtils.getNormal(mode, graph)
     status match {
       case STATUS.Backward =>
         (inputDataFormat, NetUtils.storageType(modelType)) match {
@@ -205,7 +197,7 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
               }
 
               printVec(weightRowGrad, "weight grad")
-              val localWeightRowUpdate = weightRowGrad.mul(-optimizer.lr)
+              val localWeightRowUpdate = weightRowGrad.mul(-optimizer.getLR)
               printVec(localWeightRowUpdate, "weight update of batch")
               // update local weight
               //weight.iaxpy(weightRowGrad, -optimizer.lr)
@@ -226,7 +218,7 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
             }
         }
         printVec(bias, s"original bias")
-        val biasTmp = backward.average(0).imul(-optimizer.lr / graph.taskNum)
+        val biasTmp = backward.average(0).imul(-optimizer.getLR / graph.taskNum)
         bias.iadd(biasTmp)
         if (biasUpdate == null) {
           biasUpdate = biasTmp

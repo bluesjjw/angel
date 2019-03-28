@@ -25,7 +25,7 @@ import com.tencent.angel.ml.psf.optimizer.MomentumUpdateFunc
 import com.tencent.angel.psagent.PSAgentContext
 import scala.collection.mutable
 
-class Momentum(stepSize: Double, val momentum: Double) extends Optimizer(stepSize) {
+class Momentum(stepSize: Double, var momentum: Double) extends Optimizer(stepSize) {
   override protected var numSlot: Int = 2
 
   override def resetParam(paramMap: mutable.Map[String, Double]): Unit = {

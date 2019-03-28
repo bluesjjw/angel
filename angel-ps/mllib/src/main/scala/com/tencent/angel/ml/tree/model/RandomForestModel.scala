@@ -22,8 +22,8 @@ object RandomForestModel {
   def apply(conf: Configuration, _ctx: TaskContext): RandomForestModel = {
     val algo = conf.get(MLConf.ML_TREE_TASK_TYPE,
       MLConf.DEFAULT_ML_TREE_TASK_TYPE)
-    val numTrees = conf.getInt(MLConf.ML_NUM_TREE,
-      MLConf.DEFAULT_ML_NUM_TREE)
+    val numTrees = conf.getInt(MLConf.ML_RF_TREE_NUM,
+      MLConf.DEFAULT_ML_RF_TREE_NUM)
     RandomForestModel(Algo.fromString(algo), new Array[DecisionTreeModel](numTrees), conf, _ctx)
   }
 

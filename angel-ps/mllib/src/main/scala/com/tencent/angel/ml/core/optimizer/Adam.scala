@@ -24,9 +24,10 @@ import com.tencent.angel.ml.matrix.psf.update.base.VoidResult
 import com.tencent.angel.ml.psf.optimizer.AdamUpdateFunc
 import com.tencent.angel.psagent.PSAgentContext
 import org.apache.commons.logging.LogFactory
+import scala.collection._
 
 
-class Adam(stepSize: Double, val gamma: Double, val beta: Double) extends Optimizer(stepSize) {
+class Adam(stepSize: Double, var gamma: Double, var beta: Double) extends Optimizer(stepSize) {
   private val LOG = LogFactory.getLog(classOf[Adam])
 
   override protected var numSlot: Int = 3

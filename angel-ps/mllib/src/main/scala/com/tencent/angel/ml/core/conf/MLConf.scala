@@ -171,8 +171,8 @@ object MLConf {
   val DEFAULT_KMEANS_C = 0.1
 
   // GBDT Params
-  val ML_GBDT_TASK_TYPE = "ml.gbdt.task.type"
-  val DEFAULT_ML_GBDT_TASK_TYPE = "classification"
+  val ML_TREE_TASK_TYPE = "ml.gbdt.task.type"
+  val DEFAULT_ML_TREE_TASK_TYPE = "classification"
   val ML_GBDT_CLASS_NUM = "ml.gbdt.class.num"
   val DEFAULT_ML_GBDT_CLASS_NUM = 2
   val ML_GBDT_PARALLEL_MODE = "ml.gbdt.parallel.mode"
@@ -206,6 +206,9 @@ object MLConf {
   val DEFAULT_ML_TREE_IMPURITY = "gini"
   val ML_TREE_AGGRE_MAX_MEMORY_MB = "ml.tree.aggr.max.memory.mb"
   val DEFAULT_ML_TREE_AGGRE_MAX_MEMORY_MB = 256
+
+  val ML_RF_TREE_NUM = "ml.rf.tree.num"
+  val DEFAULT_ML_RF_TREE_NUM = 20
 
   /** AutoML **/
   val SYNC_BATCH = "ml.sync.batch"
