@@ -37,8 +37,9 @@ class GraphModel extends Serializable {
   val conf = SharedConf.get()
   implicit val graph = new AngelGraph(new PlaceHolder())
   var jsonAst: JValue = conf.getJson
-  var stepSize: Double = SharedConf.learningRate
-  var scheduler: StepSizeScheduler = new StandardDecay(stepSize)
+
+  val stepSize: Double = SharedConf.learningRate
+  val scheduler: StepSizeScheduler = StepSizeScheduler(SharedConf.getStepSizeScheduler, stepSize)
 
   def ensureJsonAst(): Unit = {
     if (jsonAst == null) {
