@@ -19,7 +19,7 @@ object AutoOfflineRunner {
     val modelPath = params.getOrElse("model", "")
 
     // set running mode, use angel_ps mode for spark
-    SharedConf.get().set(AngelConf.ANGEL_RUNNING_MODE, RunningMode.ANGEL_PS.toString)
+    SharedConf.get().set(AngelConf.ANGEL_RUNNING_MODE, RunningMode.ANGEL_PS_WORKER.toString)
 
     // build SharedConf with params
     SharedConf.addMap(params)
@@ -35,7 +35,7 @@ object AutoOfflineRunner {
     if (modelPath.length > 0)
       conf.set(AngelConf.ANGEL_LOAD_MODEL_PATH, modelPath)
 
-    val sc   = new SparkContext(conf)
+    val sc = new SparkContext(conf)
 
     // start PS
     PSContext.getOrCreate(sc)

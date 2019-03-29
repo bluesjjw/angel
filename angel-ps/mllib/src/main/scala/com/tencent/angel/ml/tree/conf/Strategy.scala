@@ -226,17 +226,17 @@ object Strategy {
       MLConf.DEFAULT_ML_TREE_TASK_TYPE).toLowerCase)
     strategy.setImpurityWithString(conf.get(MLConf.ML_TREE_IMPURITY,
       MLConf.DEFAULT_ML_TREE_IMPURITY))
-    strategy.setNumTrees(conf.getInt(MLConf.ML_NUM_TREE,
-      MLConf.DEFAULT_ML_NUM_TREE))
-    strategy.setMaxDepth(conf.getInt(MLConf.ML_TREE_MAX_DEPTH,
-      MLConf.DEFAULT_ML_TREE_MAX_DEPTH))
+    strategy.setNumTrees(conf.getInt(MLConf.ML_RF_TREE_NUM,
+      MLConf.DEFAULT_ML_RF_TREE_NUM))
+    strategy.setMaxDepth(conf.getInt(MLConf.ML_GBDT_TREE_DEPTH,
+      MLConf.DEFAULT_ML_GBDT_TREE_DEPTH))
     strategy.setNumClasses(conf.getInt(MLConf.ML_NUM_CLASS,
       MLConf.DEFAULT_ML_NUM_CLASS))
-    strategy.setMaxBins(conf.getInt(MLConf.ML_TREE_MAX_BIN,
-      MLConf.DEFAULT_ML_TREE_MAX_BIN))
+    strategy.setMaxBins(conf.getInt(MLConf.ML_GBDT_SPLIT_NUM,
+      MLConf.DEFAULT_ML_GBDT_SPLIT_NUM))
     strategy.setSubSamplingRate(conf.getDouble(MLConf.ML_TREE_SUB_SAMPLE_RATE,
       MLConf.DEFAULT_ML_TREE_SUB_SAMPLE_RATE))
-    strategy.setFeatureSamplingStrategy(conf.get(MLConf.ML_TREE_FEATURE_SAMPLE_STRATEGY,
+    strategy.setFeatureSamplingStrategy(conf.get(MLConf.ML_GBDT_FEATURE_SAMPLE_RATIO,
       MLConf.DEFAULT_ML_TREE_FEATURE_SAMPLE_STRATEGY))
     strategy.setCategoricalFeatures(conf.get(MLConf.ML_TREE_CATEGORICAL_FEATURE,
       MLConf.DEFAULT_ML_TREE_CATEGORICAL_FEATURE))

@@ -17,7 +17,7 @@ class RandomForestRunner extends MLRunner {
     val numTasks = conf.getInt(AngelConf.ANGEL_WORKERGROUP_NUMBER,
       AngelConf.DEFAULT_ANGEL_WORKERGROUP_NUMBER) *
       conf.getInt(AngelConf.ANGEL_WORKER_TASK_NUMBER, AngelConf.DEFAULT_ANGEL_WORKER_TASK_NUMBER)
-    val numTrees = conf.getInt(MLConf.ML_NUM_TREE, MLConf.DEFAULT_ML_NUM_TREE)
+    val numTrees = conf.getInt(MLConf.ML_RF_TREE_NUM, MLConf.DEFAULT_ML_RF_TREE_NUM)
     if (numTrees < numTasks) {
       conf.setInt(AngelConf.ANGEL_WORKERGROUP_NUMBER, numTrees)
       conf.setInt(AngelConf.ANGEL_WORKER_TASK_NUMBER, 1)

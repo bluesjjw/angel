@@ -20,14 +20,23 @@ package com.tencent.angel.ml.core.network.layers.verge
 
 import java.util.concurrent.Future
 
+import com.tencent.angel.exception.AngelException
 import com.tencent.angel.ml.core.conf.{MLConf, SharedConf}
 import com.tencent.angel.ml.core.network.layers._
 import com.tencent.angel.ml.core.network.transfunc.TransFunc
 import com.tencent.angel.ml.core.optimizer.{OptUtils, Optimizer}
 import com.tencent.angel.ml.core.utils.{NetUtils, PSMatrixUtils}
-
+import com.tencent.angel.ml.math2.matrix._
+import com.tencent.angel.ml.math2.storage._
+import com.tencent.angel.ml.math2.ufuncs.Ufuncs
+import com.tencent.angel.ml.math2.utils.VectorUtils
+import com.tencent.angel.ml.math2.vector._
+import com.tencent.angel.ml.math2.{MFactory, VFactory}
 import com.tencent.angel.ml.matrix.psf.update.RandomNormal
-
+import com.tencent.angel.ml.matrix.psf.update.base.VoidResult
+import com.tencent.angel.ml.matrix.{MatrixContext, RowType}
+import com.tencent.angel.model.{MatrixLoadContext, MatrixSaveContext, ModelLoadContext, ModelSaveContext}
+import com.tencent.angel.psagent.PSAgentContext
 import org.apache.commons.logging.LogFactory
 
 
@@ -46,6 +55,8 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
   val mode = SharedConf.runningMode()
   val modelsize = SharedConf.modelSize
 
+
+  val LOG_LEVEL = "debug"
 
   private val numSlot = OptUtils.getSlotNum(optimizer)
 
@@ -106,7 +117,6 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
         val indices = graph.placeHolder.getIndices
         // the shape of weight matrix is (outputDim, inputDim)
         //weight = PSMatrixUtils.getMatrixWithIndex(1, weightId, 0, outputDim, indices)
-        println(s"worker ${SparkEnv.get.executorId}")
         weight = PSMatrixUtils.getMatrix(epoch, weightId, 0, outputDim)
         printVec(weight.getRow(0), "original weight")
       case ("libsvm" | "dummy", "sparse" | "component_sparse") => // sparse data, sparse model
@@ -201,15 +211,12 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
               printVec(localWeightRowUpdate, "weight update of batch")
               // update local weight
               //weight.iaxpy(weightRowGrad, -optimizer.lr)
-              println(s"dim of weight(0): ${weight.getRow(0).dim()}, dim of local update: ${localWeightRowUpdate.dim()}")
-              weight.getRow(0).iadd(localWeightRowUpdate)
+              weight.iadd(0, localWeightRowUpdate)
               // update local weight update
               if (weightUpdate(0) == null) {
-                println(s"local weight update is null")
                 //weightUpdate(0) = weightRowGrad.mul(-optimizer.lr)
                 weightUpdate(0) = localWeightRowUpdate
               } else {
-                println(s"local weight update is not null")
                 //weightUpdate(0).iaxpy(weightRowGrad, -optimizer.lr)
                 weightUpdate(0).iadd(localWeightRowUpdate)
               }
@@ -218,7 +225,8 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
             }
         }
         printVec(bias, s"original bias")
-        val biasTmp = backward.average(0).imul(-optimizer.getLR / graph.taskNum)
+        val biasTmp = backward.average(0).imul(-optimizer.getLR)
+        println(s"task num: ${graph.taskNum}")
         bias.iadd(biasTmp)
         if (biasUpdate == null) {
           biasUpdate = biasTmp
@@ -232,7 +240,9 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
   }
 
   override def pushGradient(): Unit = {
-    val normal = 1.0 / OptUtils.getNormal(mode, graph)
+    //val normal = 1.0 / OptUtils.getNormal(mode, graph)
+    val normal = 1.0 / graph.taskNum
+    println(s"normal $normal")
 
     status match {
       case STATUS.Backward =>
@@ -250,6 +260,7 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
 //            PSMatrixUtils.incrementRows(weightId, weightUpdate.map(_.getRowId), weightUpdate)
 
             weightUpdate(0).imul(normal)
+            printVec(weightUpdate(0), "weight update")
             weightUpdate(0).setMatrixId(weight.getMatrixId)
             weightUpdate(0).setRowId(0)
             weightUpdate(0).setClock(weight.getClock)
@@ -258,6 +269,7 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
         }
 
         biasUpdate.imul(normal)
+        printVec(biasUpdate, "bias update")
         PSMatrixUtils.incrementRow(biasId, 0, biasUpdate)
 
         weightUpdate(0).imul(0)
@@ -348,22 +360,22 @@ class SimpleInputLayer(name: String, outputDim: Int, transFunc: TransFunc, overr
   }
 
   def printVec(vec: Vector, info: String): Unit = {
-    //println(vec.getType.toString)
-    vec.getType match {
-      case RowType.T_DOUBLE_DENSE =>
-        val vecStr = vec.getStorage.asInstanceOf[IntDoubleDenseVectorStorage]
-          .getValues.take(10).mkString(",")
-        println(s"$info $vecStr")
-      case RowType.T_FLOAT_DENSE =>
-        val vecStr = vec.getStorage.asInstanceOf[IntFloatDenseVectorStorage]
-          .getValues.take(10).mkString(",")
-        println(s"$info $vecStr")
-      case RowType.T_FLOAT_SPARSE =>
-        val vecStr = vec.getStorage.asInstanceOf[IntFloatSparseVectorStorage]
-          .getValues.take(10).mkString(",")
-        println(s"$info $vecStr")
+    if (LOG_LEVEL.equalsIgnoreCase("debug")) {
+      vec.getType match {
+        case RowType.T_DOUBLE_DENSE =>
+          val vecStr = vec.getStorage.asInstanceOf[IntDoubleDenseVectorStorage]
+            .getValues.take(10).mkString(",")
+          println(s"$info $vecStr")
+        case RowType.T_FLOAT_DENSE =>
+          val vecStr = vec.getStorage.asInstanceOf[IntFloatDenseVectorStorage]
+            .getValues.take(10).mkString(",")
+          println(s"$info $vecStr")
+        case RowType.T_FLOAT_SPARSE =>
+          val vecStr = vec.getStorage.asInstanceOf[IntFloatSparseVectorStorage]
+            .getValues.take(10).mkString(",")
+          println(s"$info $vecStr")
+      }
     }
-
   }
 
 

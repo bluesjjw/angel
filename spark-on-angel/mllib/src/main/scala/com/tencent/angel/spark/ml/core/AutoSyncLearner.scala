@@ -125,18 +125,16 @@ class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = true) {
       while (innerBatch < numSplits) {
         // on executor
         val (sumLoss, batchSize) = manifold.mapPartitionsWithIndex { (partId, iter) =>
-          println(s"partition $partId")
           PSContext.instance()
           val indices = Random.shuffle(List.range(0, bcNumSplits.value)).take(bcBarrier.value)
-          println(s"batch indices: ${indices.mkString(",")}")
+          println(s"partition $partId, batch indices: ${indices.mkString(",")}")
           var counter = 0
           var retBatchSize: Int = Int.MaxValue
           var retLoss: Double = 0
           iter.zipWithIndex.foreach { case (batch, idx) =>
             if (indices.contains(idx)) {
-              println(s"use batch $idx")
+              //println(s"use batch $idx, counter $counter")
               model.feedData(batch)
-              println(s"counter $counter")
               if (counter == 0)
                 model.pullParams(epoch)
               model.predict()

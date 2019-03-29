@@ -194,14 +194,14 @@ object MLConf {
   val DEFAULT_ML_GBDT_REG_ALPHA = 0
   val ML_GBDT_REG_LAMBDA = "ml.gbdt.reg.lambda"
   val DEFAULT_ML_GBDT_REG_LAMBDA = 1.0
-  val ML_TREE_NUM_THREAD = "ml.tree.num.thread"
-  val DEFAULT_ML_TREE_NUM_THREAD = 20
+  val ML_GBDT_THREAD_NUM = "ml.tree.num.thread"
+  val DEFAULT_ML_GBDT_THREAD_NUM = 20
   val ML_GBDT_BATCH_SIZE = "ml.gbdt.batch.size"
   val DEFAULT_ML_GBDT_BATCH_SIZE = 10000
   val ML_GBDT_SERVER_SPLIT = "ml.gbdt.server.split"
   val DEFAULT_ML_GBDT_SERVER_SPLIT = false
-  val ML_TREE_CATEGORICAL_FEATURE = "ml.tree.categorical.feature"
-  val DEFAULT_ML_TREE_CATEGORICAL_FEATURE = ""
+  val ML_GBDT_CATE_FEAT = "ml.gbdt.cate.feat"
+  val DEFAULT_ML_GBDT_CATE_FEAT = "none"
   val ML_TREE_IMPURITY = "ml.tree.impurity"
   val DEFAULT_ML_TREE_IMPURITY = "gini"
   val ML_TREE_AGGRE_MAX_MEMORY_MB = "ml.tree.aggr.max.memory.mb"
@@ -209,6 +209,16 @@ object MLConf {
 
   val ML_RF_TREE_NUM = "ml.rf.tree.num"
   val DEFAULT_ML_RF_TREE_NUM = 20
+  val ML_TREE_SUB_SAMPLE_RATE = "ml.tree.sub.sample.rate"
+  val DEFAULT_ML_TREE_SUB_SAMPLE_RATE = 1
+  val ML_TREE_FEATURE_SAMPLE_STRATEGY = "ml.tree.feature.sample.strategy"
+  val DEFAULT_ML_TREE_FEATURE_SAMPLE_STRATEGY = "all"
+  val ML_TREE_NODE_MIN_INSTANCE = "ml.tree.node.min.instance"
+  val DEFAULT_ML_TREE_NODE_MIN_INSTANCE = 1
+  val ML_TREE_NODE_MIN_INFOGAIN = "ml.tree.node.min.infogain"
+  val DEFAULT_ML_TREE_NODE_MIN_INFOGAIN = 0
+  val ML_TREE_CATEGORICAL_FEATURE = "ml.tree.categorical.feature"
+  val DEFAULT_ML_TREE_CATEGORICAL_FEATURE = ""
 
   /** AutoML **/
   val SYNC_BATCH = "ml.sync.batch"

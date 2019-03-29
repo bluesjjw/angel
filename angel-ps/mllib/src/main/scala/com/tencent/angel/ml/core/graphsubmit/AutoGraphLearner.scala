@@ -27,14 +27,15 @@ class AutoGraphLearner (modelClassName: String, ctx: TaskContext) extends MLLear
   var epochNum: Int = SharedConf.epochNum
   val indexRange: Long = SharedConf.indexRange
   val modelSize: Long = SharedConf.modelSize
-  val decay: Double = SharedConf.decay
   val lr0: Double = SharedConf.learningRate
 
   // Init Graph Model
   val model: GraphModel = GraphModel(modelClassName, conf, ctx)
   model.buildNetwork()
   val graph: AngelGraph = model.graph
-  val ssScheduler: StepSizeScheduler = new WarmRestarts(lr0, lr0/100)
+  val ssScheduler: StepSizeScheduler = StepSizeScheduler(SharedConf.getStepSizeScheduler, lr0)
+  val decayOnBatch = conf.getBoolean(MLConf.ML_OPT_DECAY_ON_BATCH, MLConf.DEFAULT_ML_OPT_DECAY_ON_BATCH)
+  val decay = conf.getDouble(MLConf.ML_LEARN_DECAY, MLConf.DEFAULT_ML_LEARN_DECAY)
 
   val solver: Solver = Solver(false)
   var tuneIter: Int = _
