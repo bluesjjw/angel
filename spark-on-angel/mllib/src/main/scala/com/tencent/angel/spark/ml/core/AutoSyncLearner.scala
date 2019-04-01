@@ -126,26 +126,34 @@ class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = true) {
         // on executor
         val (sumLoss, batchSize) = manifold.mapPartitionsWithIndex { (partId, iter) =>
           PSContext.instance()
-          val indices = Random.shuffle(List.range(0, bcNumSplits.value)).take(bcBarrier.value)
-          println(s"partition $partId, batch indices: ${indices.mkString(",")}")
+          val batchIter = iter.toList
+          var left = bcBarrier.value
           var counter = 0
           var retBatchSize: Int = Int.MaxValue
           var retLoss: Double = 0
-          iter.zipWithIndex.foreach { case (batch, idx) =>
-            if (indices.contains(idx)) {
-              //println(s"use batch $idx, counter $counter")
-              model.feedData(batch)
-              if (counter == 0)
-                model.pullParams(epoch)
-              model.predict()
-              val loss = model.getLoss()
-
-              model.backward()
-
-              retBatchSize = retBatchSize min batch.length
-              retLoss += loss
-              counter += 1
+          while (left > 0) {
+            val takeNum = left min bcNumSplits.value
+            val indices = Random.shuffle(List.range(0, bcNumSplits.value)).take(takeNum)
+            println(s"partition $partId, batch indices: ${indices.mkString(",")}")
+            batchIter.zipWithIndex.foreach { case (batch, idx) =>
+              if (indices.contains(idx)) {
+                println(s"counter $counter")
+                // feed data
+                model.feedData(batch)
+                // full model
+                if (counter == 0)
+                  model.pullParams(epoch)
+                // forward
+                model.predict()
+                val loss = model.getLoss()
+                // backward
+                model.backward()
+                retBatchSize = retBatchSize min batch.length
+                retLoss += loss
+                counter += 1
+              }
             }
+            left -= takeNum
           }
           println("------push gradient to ps------")
           model.pushGradient()

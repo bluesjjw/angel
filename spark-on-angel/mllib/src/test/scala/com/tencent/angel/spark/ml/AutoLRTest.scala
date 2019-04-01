@@ -24,11 +24,11 @@ class AutoLRTest extends PSFunSuite with SharedPSContext {
     SharedConf.get().setDouble(MLConf.ML_LEARN_RATE, 0.01)
     SharedConf.get().setDouble(MLConf.ML_OPT_DECAY_ALPHA, 0.0)
     SharedConf.get().set(MLConf.ML_DATA_INPUT_FORMAT, "libsvm")
-    SharedConf.get().setInt(MLConf.ML_EPOCH_NUM, 10)
+    SharedConf.get().setInt(MLConf.ML_EPOCH_NUM, 2)
     SharedConf.get().setDouble(MLConf.ML_VALIDATE_RATIO, 0.1)
     SharedConf.get().setDouble(MLConf.ML_REG_L2, 0.0)
     SharedConf.get().setDouble(MLConf.ML_BATCH_SAMPLE_RATIO, 0.1)
-    SharedConf.get().setInt(MLConf.SYNC_BATCH, 2)
+    SharedConf.get().setInt(MLConf.SYNC_BATCH, 20)
     dim = SharedConf.indexRange.toInt
 
     SharedConf.get().set(AngelConf.ANGEL_RUNNING_MODE, RunningMode.ANGEL_PS.toString)
