@@ -27,17 +27,16 @@ object CovarianceType extends Enumeration {
   val MATERN5_ISO = Value("MATERN5_ISO")
   val SQUAREEXP_ISO = Value("SQUAREEXP_ISO")
 
-  def parse(name: String): Covariance = {
+  def fromString(name: String): Covariance = {
     val covType = CovarianceType.withName(name.toUpperCase())
-    parse(covType)
+    fromString(covType)
   }
 
-  def parse(covType: CovarianceType.Value): Covariance = covType match {
+  def fromString(covType: CovarianceType.Value): Covariance = covType match {
     case MATERN3 => new Matern3
     case MATERN5 => new Matern5
     case MATERN5_ISO => new Matern5Iso
     case SQUAREEXP_ISO => new SquareExpIso
     case _ => new Matern5
   }
-
 }

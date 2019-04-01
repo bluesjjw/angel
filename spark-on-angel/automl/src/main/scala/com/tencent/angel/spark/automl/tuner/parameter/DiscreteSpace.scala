@@ -26,14 +26,13 @@ import scala.util.Random
 /**
   * Search space with discrete values
   *
-  * @param name: Name of the parameter
-  * @param values: List of all possible values
+  * @param name   : Name of the parameter
+  * @param values : List of all possible values
   */
-class DiscreteSpace[T <: AnyVal: ClassTag](
-                                 override val name: String,
-                                 var values: Array[T],
-                                 override val doc: String = "discrete param",
-                                 seed: Int = 100) extends ParamSpace[T](name, doc) {
+class DiscreteSpace[T <: AnyVal : ClassTag](
+                                             override val name: String,
+                                             var values: Array[T],
+                                             override val doc: String = "discrete param") extends ParamSpace[T](name, doc) {
 
   private val helper: String = "supported format of discrete parameter: [0.1,0.2,0.3,0.4] or [0.1:1:0.1]"
 
@@ -46,7 +45,9 @@ class DiscreteSpace[T <: AnyVal: ClassTag](
     this(name, config, "discrete param")
   }
 
-  def parseConfig(config: String): Array[T] = {
+  def parseConfig(input: String): Array[T] = {
+    assert(input.startsWith("{") && input.endsWith("}"))
+    val config = input.substring(1, input.length - 1)
     val values: Array[T] = config.trim match {
       case _ if config.contains(",") =>
         config.split(',').map(asType)
@@ -94,7 +95,7 @@ class DiscreteSpace[T <: AnyVal: ClassTag](
     }
   }
 
-  val rd = new Random(seed)
+  val rd = new Random()
 
   def getValues: Array[Double] = values.map(asDouble)
 
@@ -110,12 +111,16 @@ class DiscreteSpace[T <: AnyVal: ClassTag](
 
   def sampleOne(): T = values(rd.nextInt(numValues))
 
-  override def toString: String = s"DiscreteSpace[$name]: (${values mkString(",")})"
+  override def toString: String = s"DiscreteSpace[$name]: (${values mkString (",")})"
 
 }
 
 object DiscreteSpace {
-  
+
+  def apply[T <: AnyVal : ClassTag](name: String, config: String): DiscreteSpace[T] = {
+    new DiscreteSpace[T](name, config)
+  }
+
   def main(args: Array[String]): Unit = {
     val obj = new DiscreteSpace[Int]("test", "1:10:1")
     println(obj.toString)

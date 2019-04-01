@@ -24,14 +24,13 @@ import org.apache.spark.ml.Transformer
 import org.apache.spark.ml.feature.Tokenizer
 
 
-
 class TokenizerWrapper extends TransformerWrapper {
 
   override val transformer: Transformer = new Tokenizer()
   override var parent: TransformerWrapper = _
 
   override val requiredInputCols: Array[String] = Array("sentence")
-  override val requiredOutputCols: Array[String] = Array("words")
+  override val requiredOutputCols: Array[String] = Array("outTokenizer")
 
   override val hasMultiInputs: Boolean = false
   override val hasMultiOutputs: Boolean = false

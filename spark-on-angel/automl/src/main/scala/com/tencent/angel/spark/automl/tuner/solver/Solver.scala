@@ -18,13 +18,12 @@
 
 package com.tencent.angel.spark.automl.tuner.solver
 
-
 import com.tencent.angel.spark.automl.tuner.TunerParam
 import com.tencent.angel.spark.automl.tuner.acquisition.{Acquisition, EI}
 import com.tencent.angel.spark.automl.tuner.acquisition.optimizer.{AcqOptimizer, RandomSearch}
 import com.tencent.angel.spark.automl.tuner.config.{Configuration, ConfigurationSpace}
 import com.tencent.angel.spark.automl.tuner.parameter.{ContinuousSpace, DiscreteSpace, ParamSpace}
-import com.tencent.angel.spark.automl.tuner.surrogate.{GPSurrogate, Surrogate}
+import com.tencent.angel.spark.automl.tuner.surrogate._
 import com.tencent.angel.spark.automl.utils.AutoMLException
 import org.apache.spark.ml.linalg.Vector
 import org.apache.commons.logging.{Log, LogFactory}
@@ -33,11 +32,22 @@ class Solver(
               val cs: ConfigurationSpace,
               val surrogate: Surrogate,
               val acqFuc: Acquisition,
-              val optimizer: AcqOptimizer) {
+              val optimizer: AcqOptimizer,
+              val surrogateMode: SurrogateMode.Value) {
 
   val LOG: Log = LogFactory.getLog(classOf[Solver])
 
   val PARAM_TYPES: Array[String] = Array("discrete", "continuous")
+
+  ensureValid()
+
+  def ensureValid(): Unit = {
+    // ensure grid
+    surrogateMode match {
+      case SurrogateMode.GRID => cs.setAllToGrid()
+      case _ =>
+    }
+  }
 
   def getHistory(): (Array[Vector], Array[Double]) = (surrogate.preX.toArray, surrogate.preY.toArray)
 
@@ -47,7 +57,7 @@ class Solver(
     cs.addParam(param)
   }
 
-  def addParam(pType: String, vType: String, name: String, config: String): Unit = {
+  def addParam(pType: String, vType: String, name: String, config: String, seed: Int = 100): Unit = {
     pType.toLowerCase match {
       case "discrete" =>
         vType.toLowerCase match {
@@ -70,26 +80,39 @@ class Solver(
     * Suggests configurations to evaluate.
     */
   def suggest(): Array[Configuration] = {
-    val acqAndConfig = optimizer.maximize(TunerParam.batchSize)
-    println(s"suggest configurations:")
-    acqAndConfig.foreach{ case (acq, config) =>
-      println(s"config[${config.getVector.toArray.mkString("(", ",", ")")}], " +
-        s"acquisition[$acq]")
+    surrogateMode match {
+      case SurrogateMode.GP | SurrogateMode.RF =>
+        val acqAndConfig = optimizer.maximize(TunerParam.batchSize)
+        println(s"suggest configurations:")
+        acqAndConfig.foreach { case (acq, config) =>
+          println(s"config[${config.getVector.toArray.mkString("(", ",", ")")}], " +
+            s"acquisition[$acq]")
+        }
+        acqAndConfig.map(_._2)
+      case SurrogateMode.RANDOM =>
+        cs.randomSample(TunerParam.batchSize)
+      case SurrogateMode.GRID =>
+        cs.gridSample(TunerParam.batchSize)
     }
-    acqAndConfig.map(_._2)
   }
 
   /**
     * Feed evaluation result to the model
-    * @param configs: More evaluated configurations
-    * @param Y: More evaluation result
+    *
+    * @param configs : More evaluated configurations
+    * @param Y       : More evaluation result
     */
   def feed(configs: Array[Configuration], Y: Array[Double]): Unit = {
     //println(s"feed ${configs.size} configurations")
-    if (surrogate.minimize)
-      surrogate.update(configs.map(_.getVector), Y.map(-_))
-    else
-      surrogate.update(configs.map(_.getVector), Y)
+    if (!configs.isEmpty && !Y.isEmpty) {
+      if (surrogate.minimize) {
+        surrogate.update(configs.map(_.getVector), Y.map(-_))
+      }
+      else {
+        surrogate.update(configs.map(_.getVector), Y)
+      }
+    }
+    cs.addHistories(configs.map(_.getVector))
   }
 
   def feed(config: Configuration, y: Double): Unit = {
@@ -109,23 +132,46 @@ class Solver(
 object Solver {
 
   def apply(cs: ConfigurationSpace, surrogate: Surrogate, acqFuc: Acquisition, optimizer: AcqOptimizer): Solver = {
-    new Solver(cs, surrogate, acqFuc, optimizer)
+    new Solver(cs, surrogate, acqFuc, optimizer, SurrogateMode.GP)
   }
 
   def apply(cs: ConfigurationSpace): Solver = {
     val sur: Surrogate = new GPSurrogate(cs, minimize = true)
     val acq: Acquisition = new EI(sur, 0.1f)
     val opt: AcqOptimizer = new RandomSearch(acq, cs)
-    new Solver(cs, sur, acq, opt)
+    new Solver(cs, sur, acq, opt, SurrogateMode.GP)
   }
 
-  def apply[T <: AnyVal](array: Array[ParamSpace[T]], minimize: Boolean): Solver = {
+  def apply(cs: ConfigurationSpace, minimize: Boolean = true, surrogate: String): Solver = {
+    val mode = SurrogateMode.fromString(surrogate)
+    mode match {
+      case SurrogateMode.GP =>
+        val sur: Surrogate = new GPSurrogate(cs, minimize)
+        val acq: Acquisition = new EI(sur, 0.1f)
+        val opt: AcqOptimizer = new RandomSearch(acq, cs)
+        new Solver(cs, sur, acq, opt, mode)
+      case SurrogateMode.RF =>
+        val sur: Surrogate = new RFSurrogate(cs, minimize)
+        val acq: Acquisition = new EI(sur, 0.1f)
+        val opt: AcqOptimizer = new RandomSearch(acq, cs)
+        new Solver(cs, sur, acq, opt, mode)
+      case SurrogateMode.RANDOM =>
+        val sur = new NormalSurrogate(cs, minimize)
+        val acq = new EI(sur, 0.1f)
+        val opt = new RandomSearch(acq, cs)
+        new Solver(cs, sur, acq, opt, mode)
+      case SurrogateMode.GRID =>
+        val sur = new NormalSurrogate(cs, minimize)
+        val acq = new EI(sur, 0.1f)
+        val opt = new RandomSearch(acq, cs)
+        new Solver(cs, sur, acq, opt, mode)
+    }
+  }
+
+  def apply[T <: AnyVal](array: Array[ParamSpace[T]], minimize: Boolean, surrogate: String): Solver = {
     val cs: ConfigurationSpace = new ConfigurationSpace("cs")
     array.foreach(cs.addParam)
-    val sur: Surrogate = new GPSurrogate(cs, minimize)
-    val acq: Acquisition = new EI(sur, 0.1f)
-    val opt: AcqOptimizer = new RandomSearch(acq, cs)
-    new Solver(cs, sur, acq, opt)
+    Solver(cs, minimize, surrogate)
   }
 
   def apply(minimize: Boolean): Solver = {
@@ -133,7 +179,7 @@ object Solver {
     val sur: Surrogate = new GPSurrogate(cs, minimize)
     val acq: Acquisition = new EI(sur, 0.1f)
     val opt: AcqOptimizer = new RandomSearch(acq, cs)
-    new Solver(cs, sur, acq, opt)
+    new Solver(cs, sur, acq, opt, SurrogateMode.GP)
   }
 
 }

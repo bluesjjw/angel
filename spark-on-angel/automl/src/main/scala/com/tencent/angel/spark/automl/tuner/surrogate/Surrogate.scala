@@ -27,6 +27,7 @@ import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 
 /**
   * Abstract base class for surrogate model.
+  *
   * @param numParams : Number of parameters in a configuration
   */
 abstract class Surrogate(
@@ -39,7 +40,7 @@ abstract class Surrogate(
 
   val schema: StructType = StructType(
     StructField("label", DataTypes.DoubleType, nullable = false) ::
-      StructField("features",  DataTypes.createArrayType(DataTypes.DoubleType), false) ::
+      StructField("features", DataTypes.createArrayType(DataTypes.DoubleType), false) ::
       Nil)
 
   val LOG: Log = LogFactory.getLog(classOf[Surrogate])
@@ -75,10 +76,12 @@ abstract class Surrogate(
     * @param Y
     */
   def update(X: Array[Vector], Y: Array[Double]): Unit = {
-    X.zip(Y).foreach( tuple => print(tuple._1, tuple._2) )
-    preX ++= X
-    preY ++= Y
-    train
+    if (!X.isEmpty && !Y.isEmpty) {
+      X.zip(Y).foreach(tuple => print(tuple._1, tuple._2))
+      preX ++= X
+      preY ++= Y
+      train
+    }
   }
 
   def print(X: Vector, y: Double): Unit = {

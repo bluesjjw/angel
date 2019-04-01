@@ -39,8 +39,8 @@ class GPModel(val covFunc: Covariance,
           newy: BDV[Double]): this.type = {
     require(newX.rows == newy.length, "incompatible size of the input X and y")
 
-    if ( (X == null && y == null) ||
-      (newX.rows > X.rows && newy.length > y.length) ) {
+    if ((X == null && y == null) ||
+      (newX.rows > X.rows && newy.length > y.length)) {
       X = newX
       y = newy
     }
@@ -48,7 +48,7 @@ class GPModel(val covFunc: Covariance,
     val kernelDiffFunc = new GPKernelDiffFunc(this)
     val initParams = BDV(covParams.toArray :+ noiseStdDev)
 
-    val optimizer = new LBFGS[BDV[Double]](maxIter = 20, m = 7, tolerance = 0.1)
+    val optimizer = new LBFGS[BDV[Double]](maxIter = 10, m = 7, tolerance = 1e-10)
     val newParams = optimizer.minimize(kernelDiffFunc, initParams)
     //println(optimizer)
     //println(s"new params: ${newParams}")
@@ -84,7 +84,7 @@ class GPModel(val covFunc: Covariance,
       val meanNewX = meanFunc(newX)
 
       val predMean = meanNewX + KXZ.t * (invKXX * (y - meanX))
-      val predVar = diag(KZZ - KXZ.t * invKXX * KXZ).map{ v =>
+      val predVar = diag(KZZ - KXZ.t * invKXX * KXZ).map { v =>
         if (v < -1e-12 | v.isNaN | v.isInfinite) 0 else v
       }
 
@@ -129,13 +129,13 @@ object GPModel {
             covParams: BDV[Double],
             noiseStdDev: Double,
             meanFunc: (BDM[Double]) => BDV[Double]): GPModel = {
-    new GPModel(CovarianceType.parse(covName), covParams, noiseStdDev, meanFunc)
+    new GPModel(CovarianceType.fromString(covName), covParams, noiseStdDev, meanFunc)
   }
 
   def apply(covType: CovarianceType.Value,
             covParams: BDV[Double],
             noiseStdDev: Double,
             meanFunc: (BDM[Double]) => BDV[Double]): GPModel = {
-    new GPModel(CovarianceType.parse(covType), covParams, noiseStdDev, meanFunc)
+    new GPModel(CovarianceType.fromString(covType), covParams, noiseStdDev, meanFunc)
   }
 }

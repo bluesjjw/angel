@@ -18,6 +18,7 @@
 
 package com.tencent.angel.spark.automl.tuner.parameter
 
+import com.tencent.angel.spark.automl.tuner.TunerParam
 import com.tencent.angel.spark.automl.utils.{AutoMLException, Distribution}
 
 import scala.collection.mutable.ArrayBuffer
@@ -25,10 +26,10 @@ import scala.util.Random
 
 /**
   *
-  * @param name: Name of the parameter
-  * @param lower: Start of the continuous space included.
-  * @param upper: End of the continuous space included.
-  * @param num: Sampling count if possible.
+  * @param name  : Name of the parameter
+  * @param lower : Start of the continuous space included.
+  * @param upper : End of the continuous space included.
+  * @param num   : Sampling count if possible.
   * @param seed
   */
 class ContinuousSpace(
@@ -37,8 +38,7 @@ class ContinuousSpace(
                        var upper: Double,
                        var num: Int,
                        distribution: Distribution.Value = Distribution.LINEAR,
-                       override val doc: String = "continuous param space",
-                       seed: Int = 100) extends ParamSpace[Double](name, doc) {
+                       override val doc: String = "continuous param space") extends ParamSpace[Double](name, doc) {
 
   private val helper: String = "supported format of continuous parameter: [0,1] or [0,1,100]"
 
@@ -52,33 +52,38 @@ class ContinuousSpace(
     lower = items._1
     upper = items._2
     num = items._3
-    if (num != -1) {
-      isGrid = true
-      gridValues = toGrid
-    }
+    resetGrid(num)
   }
 
-  def parseConfig(config: String): (Double, Double, Int) = {
+  require(lower < upper, s"lower bound should less than upper bound")
+
+  val rd = new Random()
+
+  var isGrid: Boolean = false
+  var gridValues: Array[Double] = _
+
+  def parseConfig(input: String): (Double, Double, Int) = {
+    assert(input.startsWith("[") && input.endsWith("]"))
+    val config = input.substring(1, input.length - 1)
     val ret: (Double, Double, Int) = config.trim match {
       case _ if config.contains(",") =>
         val splits = config.split(',')
         splits.length match {
           case 2 => (splits(0).toDouble, splits(1).toDouble, -1)
+          case _ => throw new AutoMLException(s"invalid discrete, $helper")
+        }
+      case _ if config.contains(":") =>
+        val splits = config.split(':')
+        splits.length match {
           case 3 => (splits(0).toDouble, splits(1).toDouble, splits(2).toInt)
+          case _ => throw new AutoMLException(s"invalid discrete, $helper")
         }
       case _ => throw new AutoMLException(s"invalid discrete, $helper")
     }
     ret
   }
 
-  require(lower < upper, s"lower bound should less than upper bound")
-
-  val rd = new Random(seed)
-
-  var isGrid: Boolean = if (num == -1) false else true
-  var gridValues: Array[Double] = if (isGrid) toGrid else Array.empty
-
-  def toGrid(): Array[Double] = {
+  def getGridValues(num: Int): Array[Double] = {
     var ret: ArrayBuffer[Double] = ArrayBuffer[Double]()
     distribution match {
       case Distribution.LINEAR =>
@@ -91,13 +96,18 @@ class ContinuousSpace(
     ret.toArray
   }
 
+  def resetGrid(numGrid: Int): Unit = {
+    isGrid = if (numGrid < 0) false else true
+    gridValues = if (isGrid) getGridValues(numGrid) else Array.empty
+  }
+
   def getLower: Double = lower
 
   def getUpper: Double = upper
 
   def getValues: Array[Double] = gridValues
 
-  def numValues: Int = num
+  def numValues: Int = if (isGrid) gridValues.length else Int.MaxValue
 
   def toGridSearch: ParamSpace[Double] = this
 
@@ -112,17 +122,12 @@ class ContinuousSpace(
       lower + (upper - lower) * rd.nextDouble()
   }
 
-  override def toString: String = s"ContinuousSpace[$name]: (${gridValues mkString(",")})"
-
+  override def toString: String = s"ContinuousSpace[$name]: (${gridValues mkString (",")})"
 }
 
 object ContinuousSpace {
 
-  def main(args: Array[String]): Unit = {
-//    val obj = new ContinuousSpace("test", "0,10")
-    val obj = new ContinuousSpace("param1", 0, 10, 11)
-    println(obj.toString)
-    println(obj.getValues(1))
-    println(obj.sample(2).mkString(","))
+  def apply(name: String, config: String) = {
+    new ContinuousSpace(name, config)
   }
 }

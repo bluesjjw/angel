@@ -18,8 +18,9 @@
 
 package com.tencent.angel.spark.automl.tuner.config
 
+import com.tencent.angel.spark.automl.tuner.TunerParam
 import com.tencent.angel.spark.automl.tuner.math.BreezeOp._
-import com.tencent.angel.spark.automl.tuner.parameter.ParamSpace
+import com.tencent.angel.spark.automl.tuner.parameter.{ContinuousSpace, ParamSpace}
 import com.tencent.angel.spark.automl.utils.AutoMLException
 import org.apache.commons.logging.{Log, LogFactory}
 import org.apache.spark.ml.linalg.{Vector, Vectors}
@@ -43,6 +44,8 @@ class ConfigurationSpace(
 
   // configurations tried
   var preX: HashSet[Vector] = HashSet[Vector]()
+  var gridValues: Array[Configuration] = Array.empty
+  var gridIndice = 0
 
   def getParamNum: Int = numParams
 
@@ -78,13 +81,35 @@ class ConfigurationSpace(
 
   def addHistory(vec: Vector): Unit = preX += vec
 
+  def setAllToGrid(): Unit = {
+    getParams().foreach{
+      case cParam: ContinuousSpace =>
+          if(!cParam.isGrid)  cParam.resetGrid(TunerParam.defaultGridSize)
+      case _ =>
+    }
+  }
+
+  def spaceSize(): Int = {
+    var size: Int = if (numParams > 0) 1 else 0
+    var hasInfinite = false
+    getParams().foreach{ param =>
+      param.numValues match {
+        case Int.MaxValue => hasInfinite = true
+        case _ => size *= param.numValues
+      }
+    }
+    if (hasInfinite) Int.MaxValue else size
+  }
+
   def sample(size: Int): Array[Configuration] = {
     var configs: ArrayBuffer[Configuration] = new ArrayBuffer[Configuration]
 
     var missing: Int = 0
+    val left = if (spaceSize() == Int.MaxValue) Int.MaxValue else spaceSize - preX.size
+    val trueSize = left min size
+    println(s"configuration space size ${spaceSize()}, remaining $left, sample $trueSize")
     do {
-      missing = size - configs.length
-      //println(s"num of params: $numParams")
+      missing = trueSize - configs.length
       val vectors: Array[Vector] = Array.fill(missing)(Vectors.dense(new Array[Double](numParams)))
       param2Idx.foreach { case (paramName, paramIdx) =>
         paramDict.get(paramName) match {
@@ -95,12 +120,114 @@ class ConfigurationSpace(
           case None => LOG.info(s"Cannot find $paramName.")
         }
       }
-      vectors.filter(isValid).foreach{ vec =>
+      val validVectors = vectors.filter(isValid)
+      validVectors.foreach { vec =>
         configs += new Configuration(param2Idx, param2Doc, vec)
       }
-    } while(configs.length < size)
+    } while (configs.length < trueSize)
 
     configs.toArray
+  }
+
+  def randomSample(size: Int): Array[Configuration] = {
+    var configs: ArrayBuffer[Configuration] = new ArrayBuffer[Configuration]
+
+    var missing: Int = 0
+    val left = if (spaceSize() == Int.MaxValue) Int.MaxValue else spaceSize - preX.size
+    val trueSize = left min size
+    println(s"configuration space size ${spaceSize()}, remaining $left, sample $trueSize")
+    do {
+      missing = trueSize - configs.length
+      val vectors: Array[Vector] = Array.fill(missing)(Vectors.dense(new Array[Double](numParams)))
+      param2Idx.foreach { case (paramName, paramIdx) =>
+        paramDict.get(paramName) match {
+          case Some(param) =>
+            param.sample(missing).map(asDouble).zipWithIndex.foreach { case (f: Double, i: Int) =>
+              vectors(i).toArray(paramIdx) = f
+            }
+          case None => LOG.info(s"Cannot find $paramName.")
+        }
+      }
+      val validVectors = vectors.filter(isValid)
+      validVectors.foreach { vec =>
+        configs += new Configuration(param2Idx, param2Doc, vec)
+      }
+    } while (configs.length < trueSize)
+    configs.toArray
+  }
+
+  def gridSample(size: Int): Array[Configuration] = {
+    if (gridValues.isEmpty) {
+      gridValues = getGridConfigs()
+    }
+    val startIndice = gridIndice
+    val endIndice = (gridIndice + size) min gridValues.size
+    println(s"configuration space size ${gridValues.size}, " +
+      s"remaining ${gridValues.size - startIndice}, sample from $startIndice to $endIndice")
+    gridIndice = endIndice
+    if (startIndice == gridValues.size) {
+      Array.empty
+    } else {
+      val ret = new Array[Configuration](endIndice - startIndice)
+      Array.copy(gridValues, startIndice, ret, 0, endIndice - startIndice)
+      ret
+    }
+  }
+
+  def getGridConfigs(): Array[Configuration] = {
+    //assert(spaceSize() < Int.MaxValue, "all parameters must be discrete!")
+    //println(s"configuration space size ${spaceSize()}")
+    var configs: ArrayBuffer[Configuration] = new ArrayBuffer[Configuration]
+
+    var tmp: ArrayBuffer[Array[Double]] = new ArrayBuffer[Array[Double]]
+
+    val params = getParams()
+    params.foreach {
+      tmp += _.getValues
+    }
+
+    val paramsArray: Array[Array[Double]] = tmp.toArray
+
+    if (numParams == 1) {
+      var tmp: ArrayBuffer[Vector] = new ArrayBuffer[Vector]
+      paramsArray.head.foreach {
+        tmp += Vectors.dense(_)
+      }
+      val paramsVec = tmp.toArray
+      paramsVec.filter(isValid).foreach { vec =>
+        configs += new Configuration(param2Idx, param2Doc, vec)
+      }
+      configs.toArray
+    } else if (numParams == 2) {
+      val paramsGrid: Array[Array[Double]] = cartesian(paramsArray(0), paramsArray(1))
+      var tmp: ArrayBuffer[Vector] = new ArrayBuffer[Vector]
+      paramsGrid.foreach {
+        tmp += Vectors.dense(_)
+      }
+      val paramsVec: Array[Vector] = tmp.toArray
+      paramsVec.filter(isValid).foreach { vec =>
+        configs += new Configuration(param2Idx, param2Doc, vec)
+      }
+      configs.toArray
+    } else {
+      var paramsGrid: Array[Array[Double]] = cartesian(paramsArray(0), paramsArray(1))
+
+      paramsArray.foreach { a =>
+        if (!(a sameElements paramsArray(0)) && !(a sameElements paramsArray(1))) {
+          paramsGrid = cartesian(paramsGrid, a)
+        }
+      }
+
+      var tmp: ArrayBuffer[Vector] = new ArrayBuffer[Vector]
+      paramsGrid.foreach {
+        tmp += Vectors.dense(_)
+      }
+      val paramsVec: Array[Vector] = tmp.toArray
+      paramsVec.filter(isValid).foreach { vec =>
+        configs += new Configuration(param2Idx, param2Doc, vec)
+      }
+      configs.toArray
+    }
   }
 
   def asDouble(num: AnyVal): Double = {
@@ -114,56 +241,4 @@ class ConfigurationSpace(
   }
 
   def isValid(vec: Vector): Boolean = !preX.contains(vec)
-
-  def gridSample(): Array[Configuration] = {
-    var configs: ArrayBuffer[Configuration] = new ArrayBuffer[Configuration]
-
-    var tmp: ArrayBuffer[Array[Double]] = new ArrayBuffer[Array[Double]]
-
-    val params = getParams()
-    params.foreach { tmp += _.getValues }
-
-    val paramsArray: Array[Array[Double]] = tmp.toArray
-
-    if (numParams == 1){
-      val paramsGrid : Array[Array[Double]] = paramsArray
-      var tmp: ArrayBuffer[Vector] = new ArrayBuffer[Vector]
-      paramsGrid.foreach { tmp += Vectors.dense(_) }
-      val paramsVec = tmp.toArray
-      paramsVec.filter(isValid).foreach { vec =>
-        configs += new Configuration(param2Idx, param2Doc, vec)
-      }
-      configs.toArray
-    }
-
-    else if (numParams == 2){
-      val paramsGrid: Array[Array[Double]] = cartesian(paramsArray(0), paramsArray(1))
-      var tmp: ArrayBuffer[Vector] = new ArrayBuffer[Vector]
-      paramsGrid.foreach { tmp += Vectors.dense(_) }
-      val paramsVec: Array[Vector] = tmp.toArray
-      paramsVec.filter(isValid).foreach { vec =>
-        configs += new Configuration(param2Idx, param2Doc, vec)
-      }
-      configs.toArray
-    }
-
-    else{
-      var paramsGrid: Array[Array[Double]] = cartesian(paramsArray(0), paramsArray(1))
-
-      paramsArray.foreach { a =>
-        if (!(a sameElements paramsArray(0)) && !(a sameElements paramsArray(1))) {
-          paramsGrid = cartesian(paramsGrid, a)
-        }
-      }
-
-      var tmp: ArrayBuffer[Vector] = new ArrayBuffer[Vector]
-      paramsGrid.foreach{ tmp += Vectors.dense(_) }
-      val paramsVec: Array[Vector] = tmp.toArray
-      paramsVec.filter(isValid).foreach { vec =>
-        configs += new Configuration(param2Idx, param2Doc, vec)
-      }
-      configs.toArray
-    }
-
-  }
 }
