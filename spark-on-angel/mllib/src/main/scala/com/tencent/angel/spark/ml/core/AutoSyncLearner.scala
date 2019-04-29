@@ -8,24 +8,25 @@ import com.tencent.angel.ml.core.utils.paramsutils.JsonUtils
 import com.tencent.angel.ml.feature.LabeledData
 import com.tencent.angel.ml.math2.matrix.{BlasDoubleMatrix, BlasFloatMatrix, Matrix}
 import com.tencent.angel.model.{ModelLoadContext, ModelSaveContext}
-import com.tencent.angel.spark.automl.tuner.config.Configuration
+import com.tencent.angel.spark.automl.tuner.config.{Configuration, ConfigurationSpace}
+import com.tencent.angel.spark.automl.tuner.kernel.Matern5Iso
+import com.tencent.angel.spark.automl.tuner.model.GPModel
 import com.tencent.angel.spark.automl.tuner.parameter.ParamSpace
 import com.tencent.angel.spark.automl.tuner.solver.Solver
-import com.tencent.angel.spark.automl.utils.AutoMLException
+import com.tencent.angel.spark.automl.utils.{AutoMLException, DataUtils}
 import com.tencent.angel.spark.context.{AngelPSContext, PSContext}
 import com.tencent.angel.spark.ml.core.metric.{AUC, Precision}
 import com.tencent.angel.spark.ml.util.{DataLoader, SparkUtils}
 import org.apache.spark.SparkContext
-import org.apache.spark.ml.linalg.Vector
 import org.apache.spark.rdd.RDD
-import org.json4s.JsonAST.JValue
+import breeze.linalg.{DenseMatrix => BDM, DenseVector => BDV}
+import org.apache.spark.ml.linalg.{Vector, Vectors}
 
-import scala.collection.mutable
 import scala.collection.mutable.ArrayBuffer
 import scala.reflect.ClassTag
 import scala.util.Random
 
-class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = true) {
+class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = false) {
 
   // Shared configuration with Angel-PS
   val conf = SharedConf.get()
@@ -37,40 +38,68 @@ class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = true) {
 
   println(s"fraction=$fraction validateRatio=$validationRatio numEpoch=$numEpoch")
 
-  val solver: Solver = Solver(minimize)
+  val autoSyncStrategy = "GP" // GP or AIMD
+  var curBarrier = 1
+  val maxBarrier = (1.0 / fraction).toInt * 5
+  var historyBatch = new ArrayBuffer[Int]()
+  var historyMetric = new ArrayBuffer[Double]()
 
-  // param name -> param type (continuous or discrete), value type (int, double,...)
-  val paramType: mutable.Map[String, (String, String)] = new mutable.HashMap[String, (String, String)]()
+  val cs: ConfigurationSpace = new ConfigurationSpace("cs")
+  val covFunc = Matern5Iso()
+  val initCovParams = BDV(10, 0.1)
+  val initNoiseStdDev = 0.1
+  val gpModel: GPModel = GPModel(covFunc, initCovParams, initNoiseStdDev)
 
-  def addParam(param: ParamSpace[AnyVal]): this.type = {
-    solver.addParam(param)
-    this
+  def addHistory(batch: Int, metric: Double): Unit = {
+    historyBatch += batch
+    historyMetric += metric
   }
 
-  def addParam(pType: String, vType: String, name: String, config: String): this.type = {
-    paramType += name -> (pType.toLowerCase, vType.toLowerCase)
-    solver.addParam(pType, vType, name, config)
-    this
+  def trainGP(): Unit = {
+    println(s"history X: ${historyBatch.mkString("[",",","]")}, history Y: ${historyMetric.mkString("[",",","]")}")
+    val breezeX: BDM[Double] = DataUtils.toBreeze(
+      historyBatch.toArray.map{ batch: Int => Vectors.dense(Array(batch.toDouble)) } )
+    val breezeY: BDV[Double] = DataUtils.toBreeze(historyMetric.toArray)
+    gpModel.fit(breezeX, breezeY)
   }
 
-  def setParam(name: String, vType: String, value: Double): Unit = {
-    println(s"set param[$name] type[$vType] value[$value]")
-    vType match {
-      case "int" => conf.setInt(name, value.toInt)
-      case "long" => conf.setLong(name, value.toLong)
-      case "float" => conf.setFloat(name, value.toFloat)
-      case "double" => conf.setDouble(name, value)
-      case _ => throw new AutoMLException(s"unsupported value type $vType")
+  def predictGP(batch: Int): (Double, Double) = {
+    val breezeX = DataUtils.toBreeze(Vectors.dense(Array(batch.toDouble))).toDenseMatrix
+    val pred = gpModel.predict(breezeX)
+    (pred(0, 0), pred(0, 1))
+  }
+
+  def nextBarrierGP(): Int = {
+    trainGP()
+    val optimalBatchNum = historyBatch.last + 1
+    var batchNum = historyBatch.last + 1
+    while (batchNum < historyBatch.last + maxBarrier) {
+      val gpPred = predictGP(batchNum)
+      val mean = gpPred._1
+      val variance = gpPred._2
+      val bestMetric = if (minimize) historyMetric.min else historyMetric.max
+      println(s"batch num: $batchNum, current optimal metric: $bestMetric, mean of GP: $mean, variance of GP: $variance")
+      batchNum += 1
     }
+    optimalBatchNum - historyBatch.last
   }
 
-  def resetParam(paramMap: mutable.Map[String, Double]): this.type = {
-    paramMap.foreach(println)
-    numEpoch = paramMap.getOrElse(MLConf.ML_EPOCH_NUM, numEpoch.toDouble).toInt
-    fraction = paramMap.getOrElse(MLConf.ML_BATCH_SAMPLE_RATIO, fraction)
-    validationRatio = paramMap.getOrElse(MLConf.ML_VALIDATE_RATIO, validationRatio)
-    println(s"fraction=$fraction validateRatio=$validationRatio numEpoch=$numEpoch")
-    this
+  def nextBarrierAIMD(): Int = {
+    val curMetric = historyMetric.last
+    val lastMetric = historyMetric(historyMetric.length - 2)
+    if (curMetric > lastMetric)
+      curBarrier + 1
+    else if (curBarrier > 1)
+      curBarrier / 2
+    else 1
+  }
+
+  def updateBarrier(batchNum: Int, metric: Double): Unit = {
+    addHistory(batchNum, metric)
+    curBarrier = autoSyncStrategy match {
+      case "AIMD" => nextBarrierAIMD()
+      case "GP" => nextBarrierGP()
+    }
   }
 
   def evaluate(data: RDD[LabeledData], model: GraphModel): (Double, Double) = {
@@ -169,21 +198,14 @@ class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = true) {
 
         val loss = sumLoss / model.graph.taskNum / bcBarrier.value
         println(f"epoch=[$epoch] batch[$totalBatch] lr[$lr%.3f] batchSize[$batchSize] trainLoss=$loss")
-        if (true) {
-          //println(s"calculate metrics")
-          var validateMetricLog = ""
-          if (validationRatio > 0.0) {
-            val metrics = evaluate(validate, model)
-            if (isAIMD) {
-              if (metrics._1 > validateAuc.last)
-                barrier += 1
-              else if (barrier > 1)
-                barrier /= 2
-            }
-            validateAuc += metrics._1
-            validatePrecision += metrics._2
-            validateMetricLog = f"validateAuc=${validateAuc.last}%.5f validatePrecision=${validatePrecision.last}%.5f"
-          }
+
+        var validateMetricLog = ""
+        if (validationRatio > 0.0) {
+          val metrics = evaluate(validate, model)
+          validateAuc += metrics._1
+          validatePrecision += metrics._2
+          updateBarrier(totalBatch, metrics._1)
+          validateMetricLog = f"validateAuc=${validateAuc.last}%.5f validatePrecision=${validatePrecision.last}%.5f"
           val timeCost = (System.nanoTime - t1) / 1e9d
           println(f"time[$timeCost%.2f s] barrier[$barrier] epoch[$epoch] batch[$numUpdate] batchsize[$batchSize] lr[$lr%.5f] $validateMetricLog")
         }

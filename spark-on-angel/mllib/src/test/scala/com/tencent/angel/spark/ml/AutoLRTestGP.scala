@@ -9,7 +9,6 @@ import com.tencent.angel.spark.ml.core.{AutoOfflineLearner, AutoSyncLearner}
 
 class AutoLRTestGP extends PSFunSuite with SharedPSContext {
   private var learner: AutoOfflineLearner = _
-
   private var input: String = _
   private var dim: Int = _
 
@@ -29,13 +28,11 @@ class AutoLRTestGP extends PSFunSuite with SharedPSContext {
     SharedConf.get().setDouble(MLConf.ML_VALIDATE_RATIO, 0.1)
     SharedConf.get().setDouble(MLConf.ML_REG_L2, 0.0)
     SharedConf.get().setDouble(MLConf.ML_BATCH_SAMPLE_RATIO, 0.1)
-    SharedConf.get().setInt(MLConf.SYNC_BATCH, 20)
     dim = SharedConf.indexRange.toInt
 
     SharedConf.get().set(AngelConf.ANGEL_RUNNING_MODE, RunningMode.ANGEL_PS.toString)
 
-
-    learner = new AutoSyncLearner(2,false)
+    learner = new AutoOfflineLearner(2,false)
     learner.addParam("continuous", "double", MLConf.ML_LEARN_RATE, "[0.1:1:100]")
   }
 
