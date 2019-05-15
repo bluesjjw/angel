@@ -1,7 +1,7 @@
 package com.tencent.angel.spark.automl.sync.model
 
 import breeze.linalg.{DenseVector => BDV}
-import breeze.optimize.{AdaDeltaGradientDescent, L2Regularization, LBFGS, StochasticAveragedGradient}
+import breeze.optimize.{AdaDeltaGradientDescent, LBFGS, StochasticAveragedGradient}
 import com.tencent.angel.spark.automl.sync.data.MetricHistory
 
 /**
@@ -35,8 +35,10 @@ class Pow4 extends PowerLaw {
 object Pow4 {
 
   def main(args: Array[String]): Unit = {
-    val batches = Array(1.0, 2.0, 3.0)
-    val metrics = Array(2.0, 3.0, 10.0/3.0)
+//    val batches = Array(1.0, 2.0, 3.0)
+//    val metrics = Array(2.0, 3.0, 10.0/3.0)
+    val batches = Array(1.0, 2.0, 3.0, 4.0, 5.0)
+    val metrics = Array(0.5, 0.8, 0.9, 0.95, 0.97)
     val history = new MetricHistory()
     history.addHistory(batches, metrics)
 

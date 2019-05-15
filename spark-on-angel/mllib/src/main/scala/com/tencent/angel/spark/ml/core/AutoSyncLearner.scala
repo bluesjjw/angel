@@ -20,6 +20,7 @@ import com.tencent.angel.spark.ml.util.{DataLoader, SparkUtils}
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import breeze.linalg.{DenseMatrix => BDM, DenseVector => BDV}
+import com.tencent.angel.spark.automl.sync.model.{Pow3, PowerLaw, PowerLawEnsemble}
 import org.apache.spark.ml.linalg.{Vector, Vectors}
 
 import scala.collection.mutable.ArrayBuffer
@@ -44,11 +45,15 @@ class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = false) {
   var historyBatch = new ArrayBuffer[Int]()
   var historyMetric = new ArrayBuffer[Double]()
 
+  // GP model
   val cs: ConfigurationSpace = new ConfigurationSpace("cs")
   val covFunc = Matern5Iso()
   val initCovParams = BDV(10, 0.1)
   val initNoiseStdDev = 0.1
   val gpModel: GPModel = GPModel(covFunc, initCovParams, initNoiseStdDev)
+
+  // power-law model
+  val powerLawModel = new PowerLawEnsemble()
 
   def addHistory(batch: Int, metric: Double): Unit = {
     historyBatch += batch
@@ -92,6 +97,10 @@ class AutoSyncLearner (tuneIter: Int = 20, minimize: Boolean = false) {
     else if (curBarrier > 1)
       curBarrier / 2
     else 1
+  }
+
+  def nextBarrierPowerLaw(): Int = {
+    
   }
 
   def updateBarrier(batchNum: Int, metric: Double): Unit = {

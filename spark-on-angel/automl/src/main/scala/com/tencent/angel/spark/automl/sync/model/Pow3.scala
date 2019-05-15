@@ -35,8 +35,10 @@ class Pow3 extends PowerLaw {
 object Pow3 {
 
   def main(args: Array[String]): Unit = {
-    val batches = Array(1.0, 2.0, 3.0)
-    val metrics = Array(2.0, 3.0, 10.0/3.0)
+    //val batches = Array(1.0, 2.0, 3.0)
+    //val metrics = Array(2.0, 3.0, 10.0/3.0)
+    val batches = Array(1.0, 2.0, 3.0, 4.0, 5.0)
+    val metrics = Array(0.5, 0.8, 0.9, 0.95, 0.97)
     val history = new MetricHistory()
     history.addHistory(batches, metrics)
 
@@ -52,5 +54,6 @@ object Pow3 {
     println(s"new params: $newParams")
     println(s"labels: ${metrics.mkString(",")}")
     println(s"predictions: ${model.predictBatch(batches).mkString(",")}")
+    println(s"predictions: ${model.predictBatch(Array(6.0)).mkString(",")}")
   }
 }

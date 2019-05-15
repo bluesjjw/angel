@@ -13,6 +13,12 @@ class MetricHistory {
 
   def getHistory(): Array[(Double, Double)] = batches.zip(metrics).toArray
 
+  def setHistory(batches: Array[Double], metrics: Array[Double]): Unit = {
+    this.batches.clear()
+    this.metrics.clear()
+    addHistory(batches, metrics)
+  }
+
   def addHistory(batches: Array[Double], metrics: Array[Double]): Unit = {
     batches.zip(metrics).foreach( pair => addHistory(pair._1, pair._2))
   }

@@ -25,6 +25,9 @@ object MSError {
   }
 
   def grad(label: Double, feature: Double, predFunc: Double => Double, predFuncDiff: Double => BDV[Double]): BDV[Double] = {
+    val pred = predFunc(feature)
+    val gradScalar = grad(label, predFunc(feature))
+    val gradVec = predFuncDiff(feature)
     grad(label, predFunc(feature)) * predFuncDiff(feature)
   }
 
@@ -32,7 +35,8 @@ object MSError {
            predFunc: Double => Double, predFuncDiff: Double => BDV[Double]): BDV[Double] = {
     require(labels.length == features.length, s"size of labels and features should be equal.")
     (1.0 / labels.length) * labels.zip(features).map { ins =>
-      grad(ins._1, ins._2, predFunc, predFuncDiff)
+      val insGrad = grad(ins._1, ins._2, predFunc, predFuncDiff)
+      insGrad
     }.reduce((a: BDV[Double], b: BDV[Double]) => a + b)
   }
 }

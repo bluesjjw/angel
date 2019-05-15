@@ -12,15 +12,15 @@ class PowerLawDiffFunc(history: MetricHistory, model: PowerLaw) extends DiffFunc
 
     model.setParams(params)
     val preds: Array[Double] = model.predictBatch(history.getBatches())
-    //println(s"labels: ${history.getMetrics().mkString(",")}")
-    //println(s"preds: ${preds.mkString(",")}")
+    //println(s"labels in diff func: ${history.getMetrics().mkString(",")}")
+    //println(s"preds in diff func: ${preds.mkString(",")}")
     val loss = MSError.loss(history.getMetrics(), preds)
 
     val grad: BDV[Double] = MSError.grad(history.getMetrics(), history.getBatches(),
       model.predict _, model.grad _)
 
     iter += 1
-    println(s"loss: $loss, grad: ${grad}")
+    //println(s"loss: $loss, grad: ${grad}")
     (loss, grad)
   }
 }
